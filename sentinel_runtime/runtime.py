@@ -3,35 +3,62 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Sequence
 
 import pandas as pd
 
 from .config import AppConfig, load_app_config
-from .errors import CircuitBreakerOpen, ConfigError, ExchangeClientError, ReconciliationError
-from .exchange import BybitExchangeClient
+from .errors import CircuitBreakerOpen, ConfigError, ExchangeClientError, PreflightError, ReconciliationError
 from .models import ExchangeExposureSnapshot, SignalDecision
-from .notifications import TelegramNotifier
-from .risk import RiskManager
-from .signals import ModelSignalEngine
-from .storage import SQLiteRuntimeStorage
+from .preflight import build_preflight_parser, log_preflight_report, run_preflight
+
+if TYPE_CHECKING:
+    from .exchange import BybitExchangeClient
+    from .notifications import TelegramNotifier
+    from .risk import RiskManager
+    from .signals import ModelSignalEngine
+    from .storage import SQLiteRuntimeStorage
+
+
+BybitExchangeClient = None
+TelegramNotifier = None
+RiskManager = None
+ModelSignalEngine = None
+SQLiteRuntimeStorage = None
 
 
 class TradingRuntime:
     def __init__(self, config: AppConfig) -> None:
+        exchange_client_cls = BybitExchangeClient
+        notifier_cls = TelegramNotifier
+        risk_manager_cls = RiskManager
+        signal_engine_cls = ModelSignalEngine
+        storage_cls = SQLiteRuntimeStorage
+        if exchange_client_cls is None:
+            from .exchange import BybitExchangeClient as exchange_client_cls
+        if notifier_cls is None:
+            from .notifications import TelegramNotifier as notifier_cls
+        if risk_manager_cls is None:
+            from .risk import RiskManager as risk_manager_cls
+        if signal_engine_cls is None:
+            from .signals import ModelSignalEngine as signal_engine_cls
+        if storage_cls is None:
+            from .storage import SQLiteRuntimeStorage as storage_cls
+
         self._config = config
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._exchange = BybitExchangeClient(
+        self._exchange = exchange_client_cls(
             exchange_config=config.exchange,
             strategy_config=config.strategy,
             circuit_breaker_config=config.circuit_breaker,
         )
-        self._notifier = TelegramNotifier(config.notifications)
-        self._risk_manager = RiskManager(config.risk)
-        self._signal_engine = ModelSignalEngine(
+        self._notifier = notifier_cls(config.notifications)
+        self._risk_manager = risk_manager_cls(config.risk)
+        self._signal_engine = signal_engine_cls(
             model_path=config.strategy.model_path,
             confidence_threshold=config.strategy.confidence_threshold,
         )
-        self._storage = SQLiteRuntimeStorage(config.storage.db_path)
+        self._storage = storage_cls(config.storage.db_path)
         self._last_processed_candle_time: datetime | None = None
         self._last_reported_closed_trade_id: str | None = None
         self._last_action_candle_time: datetime | None = None
@@ -467,10 +494,21 @@ def configure_logging(level: str) -> None:
     )
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_preflight_parser()
+    args = parser.parse_args(argv)
     configure_logging("INFO")
+    if args.preflight:
+        try:
+            report = run_preflight(args.env_file)
+        except (ConfigError, PreflightError) as exc:
+            logging.getLogger("sentinel_runtime").error("Preflight failed: %s", exc)
+            return 1
+        log_preflight_report(report)
+        return 0
+
     try:
-        config = load_app_config()
+        config = load_app_config(args.env_file)
     except ConfigError as exc:
         logging.getLogger("sentinel_runtime").error("Configuration error: %s", exc)
         return 1

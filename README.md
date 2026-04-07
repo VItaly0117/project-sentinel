@@ -51,7 +51,7 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 
 ## Core modules
 - `sentinel_runtime/`: runtime config, exchange adapter, signals, risk, notifications, persistence, loop
-- `sentinel_training/`: config, labels, dataset building, splitting, training, evaluation, artifacts
+- `sentinel_training/`: config, labels, dataset building, splitting, training, evaluation, artifacts, ingest
 - `docs/`: compact operator and data-source notes
 - `tests/`: focused pytest suites for runtime and training safety contracts
 - `ai/`: compact project memory for low-token continuation across sessions
@@ -62,13 +62,37 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 3. Keep `EXCHANGE_ENV=demo` or `EXCHANGE_ENV=testnet`.
 4. Keep `DRY_RUN_MODE=true` for a safe smoke run.
 5. Put `monster_v4_2.json` in the repo root or set `MODEL_PATH`.
+6. Run the local preflight before the first bot launch:
+   - `python3 sentineltest.py --preflight`
+
+## Runtime preflight
+- Command:
+  - `python3 sentineltest.py --preflight`
+- Optional custom env file:
+  - `python3 sentineltest.py --preflight --env-file /path/to/.env`
+- The preflight is read-only for trading:
+  - it does not place orders
+  - it does not start the runtime loop
+  - it does not call the exchange API
+- It checks:
+  - required environment variables
+  - `MODEL_PATH` exists and is readable
+  - `RUNTIME_DB_PATH` is writable as a SQLite file path
+  - exchange environment selection
+  - live-mode blocking
+- Successful output clearly reports:
+  - `exchange_env=...`
+  - `execution_mode=dry-run` or `execution_mode=live-orders`
+  - `dry_run_mode=True` or `dry_run_mode=False`
+  - `symbol=...`
 
 ## Runtime smoke run
-1. Set `DRY_RUN_MODE=true`.
-2. Optionally set `POLL_INTERVAL_SECONDS=5` for a short operator check.
-3. Run `python3 sentineltest.py`.
-4. Confirm logs show `execution=dry-run`.
-5. Wait for a closed candle and check for:
+1. Run `python3 sentineltest.py --preflight`.
+2. Set `DRY_RUN_MODE=true`.
+3. Optionally set `POLL_INTERVAL_SECONDS=5` for a short operator check.
+4. Run `python3 sentineltest.py`.
+5. Confirm logs show `execution=dry-run`.
+6. Wait for a closed candle and check for:
    - `dry_run_order_simulated`, or
    - `trading_blocked`
 
@@ -77,8 +101,10 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - `pytest -q tests/test_runtime_mvp.py`
 - Training:
   - `pytest -q tests/test_training_pipeline.py`
+- Training ingest:
+  - `pytest -q tests/test_training_ingest.py`
 - Combined:
-  - `pytest -q tests/test_runtime_mvp.py tests/test_training_pipeline.py`
+  - `pytest -q tests/test_runtime_mvp.py tests/test_training_pipeline.py tests/test_training_ingest.py`
 
 ## Training artifacts
 - Default output root:
@@ -100,6 +126,34 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 ## Training data options
 - See:
   - `docs/training-data-sources.md`
+
+## Training data ingest
+- Normalized schema:
+  - `ts,open,high,low,close,vol`
+- Default output root:
+  - `data/normalized/`
+- Raw source folders can stay simple and local-first:
+  - `data/raw/binance/<SYMBOL>/<INTERVAL>/...`
+  - `data/raw/bybit/<SYMBOL>/<INTERVAL>/...`
+- Binance bulk archive or CSV to normalized CSV:
+  - `python3 -m sentinel_training.ingest --source binance --input ~/Downloads/BTCUSDT-5m-2024-01.zip --symbol BTCUSDT --interval 5m`
+- Bybit saved V5 JSON response to normalized CSV:
+  - `python3 -m sentinel_training.ingest --source bybit --input ~/Downloads/bybit_btcusdt_5m.json --symbol BTCUSDT --interval 5`
+- The utility writes:
+  - one normalized CSV
+  - one sidecar metadata JSON
+- Output naming is deterministic and includes:
+  - source
+  - symbol
+  - interval
+  - min/max timestamp range
+- Inspect a metadata sidecar:
+  - `python3 -m sentinel_training.ingest.inspect --metadata data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.metadata.json`
+- Verify that the CSV matches the metadata:
+  - `python3 -m sentinel_training.ingest.inspect --metadata data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.metadata.json --verify-csv`
+- Source datasets stay separate by default under:
+  - `data/normalized/binance/...`
+  - `data/normalized/bybit/...`
 
 ## Inspect SQLite locally
 - Default DB path:
@@ -147,7 +201,4 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 - `ai/patch_review.md`: accumulated review findings to convert into safe patches
 
 ## Next recommended work
-- Add lightweight artifact integrity for training outputs:
-  - dataset fingerprint
-  - model hash
-  - metadata hash
+- Run the new ingestion utility on one real Binance archive and one saved Bybit response, then compare separate training artifacts without mixing venues.

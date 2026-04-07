@@ -23,13 +23,25 @@
 - Runtime startup now reconciles persisted state against exchange open exposure, persists a `last_action_*` marker, skips duplicate action re-entry for the same candle, and fails safe when restart state is ambiguous.
 - Runtime now also supports an explicit dry-run execution mode that keeps signals, risk checks, notifications, SQLite persistence, and the runtime loop active while simulating order placement instead of sending exchange orders.
 - The default operator path is now safer for smoke runs: `DRY_RUN_MODE` defaults to `true`, startup logs expose the execution mode, and simulated actions are recorded as `dry_run_order_simulated`.
+- The runtime now also has a local preflight command at `python3 sentineltest.py --preflight` that validates env/config readiness before the first dry-run launch without starting the runtime loop or placing orders.
+- The preflight path is intentionally dependency-light at import time: it can report readiness, execution mode, `MODEL_PATH`, and SQLite path status before the exchange/runtime classes are instantiated.
 - Closed-candle gating now uses actual candle close times instead of wall-clock bucket truncation, which makes non-hour-aligned intervals safer.
 - Startup reconciliation now rejects persisted dry-run action markers when real exchange exposure exists, instead of treating side-only matches as safe.
 - SQLite runtime state now normalizes naive ISO datetimes to UTC on read, and dry-run order ids use higher-precision timestamps to reduce collision risk.
+- Runtime preflight now explicitly checks that `MODEL_PATH` exists and is readable, that `RUNTIME_DB_PATH` is writable as a SQLite file path, and that live mode remains blocked unless explicitly enabled.
 - The training pipeline now enforces deterministic seed application, validation-only early stopping, stricter time-order split checks, and richer audit metadata for split boundaries and reproducibility settings.
 - `ai/progress.md` now tracks approximate completion percentages for the MVP and the larger target system, so future sessions can quickly see what is done versus still missing.
 - Training artifacts now include `checksums.json` with SHA-256 hashes for model and metadata files, and training metadata now stores raw-file, feature-frame, label, and feature-name fingerprints.
 - `docs/training-data-sources.md` now records the current recommended data sources for the bot: Binance bulk archives as the first bootstrap base, Bybit market data for exchange-aligned validation, and Coinbase candles as a secondary cross-exchange check.
+- The repository now also includes a small local-first ingest utility under `sentinel_training/ingest/` for normalizing Binance and Bybit historical candle files into the shared training CSV schema `ts,open,high,low,close,vol`.
+- Binance and Bybit ingestion remain isolated by source-specific parsers and separate output folders, which keeps future Binance-trained versus Bybit-aligned comparisons straightforward.
+- The ingest CLI now writes a deterministic normalized CSV plus a metadata sidecar with source, symbol, interval, row count, timestamp range, and input/output SHA-256 hashes.
+- Ingest timestamp parsing is now intentionally strict around Unix milliseconds for the supported Binance and Bybit sources, instead of auto-detecting multiple time units.
+- Binance ingest now drops repeated embedded header rows inside local CSV/ZIP inputs, which makes manually concatenated archive files safer to normalize.
+- Binance ZIP metadata now fingerprints the extracted CSV payload rather than the ZIP container, and normalized CSV writes now pin float formatting for more stable output hashes.
+- Bybit named-column parsing now fails fast on ambiguous alias conflicts instead of silently picking one column.
+- The repository now also includes a tiny local inspect helper at `python3 -m sentinel_training.ingest.inspect` for reading ingest metadata sidecars and optionally verifying that the normalized CSV still matches the recorded row count, columns, and min/max timestamps.
+- `README.md` and `docs/training-data-sources.md` now contain concrete first-run walkthroughs for one Binance archive flow and one saved Bybit response flow, including expected output paths and metadata inspection commands.
 
 ## Current debt and risks
 - There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
@@ -38,13 +50,17 @@
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
 - In dry-run mode, exchange-side open position/order limits reflect the real account state only; simulated orders do not create exchange exposure.
 - Runtime still depends on a local model artifact named `monster_v4_2.json`.
+- Runtime preflight is local-only and does not verify that exchange credentials are accepted by Bybit yet; it only verifies presence and launch-time safety gates.
 - Training labels still assume OHLC barrier touches are executable and do not capture slippage, spread, latency, or order book effects.
 - Training still has no walk-forward validation, slippage model, spread model, or microstructure-aware execution assumptions.
-- There is still no in-repo downloader/normalizer for exchange datasets yet; the new data-source note is guidance, not an automated ingestion layer.
+- The ingest layer is intentionally local-first: it normalizes saved raw files, but it still does not download, paginate, or backfill exchange datasets automatically.
+- Training data quality still depends on the operator choosing the correct source file type, symbol, interval, and venue-specific candle semantics.
+- Ingest timestamp support is intentionally narrow for now: saved source files must provide Unix milliseconds for candle open times.
+- The new inspect helper validates metadata against the CSV, but it is still an operator-side check, not a broader artifact registry or dataset catalog.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
 - Some operational protections now exist in code, but persistence, orchestration, and centralized control are still absent.
 
 ## Next step
-- Add a small data ingestion/normalization utility for one chosen source first, most likely Binance bulk klines into the repo's normalized CSV format.
+- Run `python3 sentineltest.py --preflight` against the real `.env`, then perform the first documented dry-run smoke launch and inspect runtime SQLite/events before moving on to Docker or broader deployment work.
