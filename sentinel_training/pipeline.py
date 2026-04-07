@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Sequence
 
-from .artifacts import ArtifactPaths, save_artifacts
+import pandas as pd
+
+from .artifacts import ArtifactPaths, fingerprint_file, save_artifacts
 from .config import TrainingConfig, build_training_config, config_to_dict
 from .dataset import DatasetBundle, DatasetSplits, build_dataset, load_market_data, split_dataset
 from .evaluation import EvaluationResult, evaluate_model
@@ -37,6 +40,7 @@ def train_sentinel(config: TrainingConfig | None = None) -> TrainingPipelineResu
     effective_config = config or build_training_config([])
     LOGGER.info("Starting time-series training pipeline.")
 
+    raw_file_sha256 = fingerprint_file(effective_config.data_path)
     market_data = load_market_data(effective_config.data_path)
     dataset = build_dataset(market_data, effective_config.label)
     splits = split_dataset(dataset, effective_config.split)
@@ -54,6 +58,7 @@ def train_sentinel(config: TrainingConfig | None = None) -> TrainingPipelineResu
         raw_rows=len(market_data),
         raw_start=market_data["ts"].iloc[0].isoformat(),
         raw_end=market_data["ts"].iloc[-1].isoformat(),
+        raw_file_sha256=raw_file_sha256,
     )
     artifacts = save_artifacts(
         model=training.model,
@@ -84,9 +89,10 @@ def build_metadata(
     raw_rows: int,
     raw_start: str,
     raw_end: str,
+    raw_file_sha256: str,
 ) -> dict[str, object]:
     return {
-        "artifact_schema_version": 2,
+        "artifact_schema_version": 3,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "config": config_to_dict(config),
         "data_audit": {
@@ -94,9 +100,13 @@ def build_metadata(
             "raw_rows": raw_rows,
             "raw_start": raw_start,
             "raw_end": raw_end,
+            "raw_file_sha256": raw_file_sha256,
             "research_rows": len(dataset.labels),
             "research_start": _index_label(dataset.features, 0),
             "research_end": _index_label(dataset.features, -1),
+            "features_sha256": _fingerprint_dataframe(dataset.features),
+            "labels_sha256": _fingerprint_series(dataset.labels),
+            "feature_names_sha256": _fingerprint_sequence(dataset.feature_names),
         },
         "feature_names": dataset.feature_names,
         "split_boundaries": splits.boundaries.__dict__,
@@ -138,9 +148,10 @@ def log_summary(result: TrainingPipelineResult, raw_rows: int) -> None:
         result.test.log_loss_value,
     )
     LOGGER.info(
-        "Artifacts | model=%s metadata=%s legacy_model=%s",
+        "Artifacts | model=%s metadata=%s checksums=%s legacy_model=%s",
         result.artifacts.model_path,
         result.artifacts.metadata_path,
+        result.artifacts.checksums_path,
         result.artifacts.legacy_model_path,
     )
     for limitation in RESEARCH_LIMITATIONS:
@@ -162,6 +173,26 @@ def _index_label(features, position: int) -> str:  # noqa: ANN001
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def _fingerprint_dataframe(features: pd.DataFrame) -> str:
+    row_hashes = pd.util.hash_pandas_object(features, index=True)
+    digest = hashlib.sha256()
+    digest.update(row_hashes.to_numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _fingerprint_series(labels: pd.Series) -> str:
+    row_hashes = pd.util.hash_pandas_object(labels, index=True)
+    digest = hashlib.sha256()
+    digest.update(row_hashes.to_numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _fingerprint_sequence(values: list[str]) -> str:
+    digest = hashlib.sha256()
+    digest.update("\n".join(values).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -76,6 +77,7 @@ from sentinel_training.config import (  # noqa: E402
     SplitConfig,
     TrainingConfig,
 )
+from sentinel_training.artifacts import save_artifacts  # noqa: E402
 from sentinel_training.dataset import (  # noqa: E402
     DataSlice,
     DatasetBundle,
@@ -237,28 +239,69 @@ def test_build_metadata_includes_reproducibility_and_audit_fields() -> None:
     )
     validation = _evaluation_result("validation", splits.validation.row_count)
     test = _evaluation_result("test", splits.test.row_count)
+    sample_csv = Path("sample.csv")
+    sample_csv.write_text("ts,open,high,low,close,vol\n2026-04-01T00:00:00Z,1,2,0.5,1.5,10\n", encoding="utf-8")
 
-    metadata = build_metadata(
-        config=config,
-        dataset=bundle,
-        splits=splits,
-        training=training,
-        validation_metrics=validation,
-        test_metrics=test,
-        raw_rows=20,
-        raw_start="2026-04-01T00:00:00+00:00",
-        raw_end="2026-04-01T19:00:00+00:00",
-    )
+    try:
+        metadata = build_metadata(
+            config=config,
+            dataset=bundle,
+            splits=splits,
+            training=training,
+            validation_metrics=validation,
+            test_metrics=test,
+            raw_rows=20,
+            raw_start="2026-04-01T00:00:00+00:00",
+            raw_end="2026-04-01T19:00:00+00:00",
+            raw_file_sha256="abc123",
+        )
+    finally:
+        sample_csv.unlink(missing_ok=True)
 
-    assert metadata["artifact_schema_version"] == 2
+    assert metadata["artifact_schema_version"] == 3
     assert metadata["reproducibility"]["seed"] == 321
     assert metadata["reproducibility"]["deterministic_training"] is True
     assert metadata["reproducibility"]["effective_n_jobs"] == 1
     assert metadata["reproducibility"]["eval_split_names"] == ["validation"]
     assert metadata["data_audit"]["data_path"] == "sample.csv"
     assert metadata["data_audit"]["raw_rows"] == 20
+    assert metadata["data_audit"]["raw_file_sha256"] == "abc123"
     assert metadata["data_audit"]["research_rows"] == len(bundle.labels)
+    assert len(metadata["data_audit"]["features_sha256"]) == 64
+    assert len(metadata["data_audit"]["labels_sha256"]) == 64
+    assert len(metadata["data_audit"]["feature_names_sha256"]) == 64
     assert metadata["split_boundaries"]["purge_gap_rows"] == 0
+
+
+def test_save_artifacts_writes_checksums_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    legacy_model_path = tmp_path / "legacy" / "model.json"
+
+    class FakeModel:
+        def save_model(self, path: str) -> None:
+            Path(path).write_text('{"model":"ok"}', encoding="utf-8")
+
+    artifact_paths = save_artifacts(
+        model=FakeModel(),
+        metadata={"hello": "world"},
+        artifact_config=ArtifactConfig(
+            artifact_root=artifact_root,
+            legacy_model_path=legacy_model_path,
+        ),
+        experiment_name="demo-run",
+    )
+
+    checksums = json.loads(artifact_paths.checksums_path.read_text(encoding="utf-8"))
+
+    assert artifact_paths.model_path.exists()
+    assert artifact_paths.metadata_path.exists()
+    assert artifact_paths.checksums_path.exists()
+    assert checksums["schema_version"] == 1
+    assert checksums["files"]["model"]["path"] == "model.json"
+    assert checksums["files"]["metadata"]["path"] == "metadata.json"
+    assert len(checksums["files"]["model"]["sha256"]) == 64
+    assert len(checksums["files"]["metadata"]["sha256"]) == 64
+    assert checksums["files"]["legacy_model"]["path"] == str(legacy_model_path)
 
 
 def _make_bundle(row_count: int) -> DatasetBundle:

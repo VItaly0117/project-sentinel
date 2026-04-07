@@ -4,5 +4,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+data/
 artifacts/*
 !artifacts/.gitkeep

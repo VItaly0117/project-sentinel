@@ -19,7 +19,7 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - modular dataset/split/train/evaluate flow
   - validation-only early stopping
   - deterministic seed handling
-  - artifact metadata
+  - artifact metadata and checksums
   - focused pytest coverage
 - Not built yet:
   - admin panel
@@ -41,6 +41,7 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 │   ├── module-briefs/
 │   └── session-notes/
 ├── artifacts/
+├── docs/
 ├── sentinel_runtime/
 ├── sentinel_training/
 ├── tests/
@@ -51,6 +52,7 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 ## Core modules
 - `sentinel_runtime/`: runtime config, exchange adapter, signals, risk, notifications, persistence, loop
 - `sentinel_training/`: config, labels, dataset building, splitting, training, evaluation, artifacts
+- `docs/`: compact operator and data-source notes
 - `tests/`: focused pytest suites for runtime and training safety contracts
 - `ai/`: compact project memory for low-token continuation across sessions
 
@@ -77,6 +79,27 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - `pytest -q tests/test_training_pipeline.py`
 - Combined:
   - `pytest -q tests/test_runtime_mvp.py tests/test_training_pipeline.py`
+
+## Training artifacts
+- Default output root:
+  - `artifacts/train_v4/`
+- Each run can now produce:
+  - `model.json`
+  - `metadata.json`
+  - `checksums.json`
+- `metadata.json` captures:
+  - split boundaries
+  - reproducibility settings
+  - raw file hash
+  - feature/label fingerprints
+- `checksums.json` captures:
+  - SHA-256 for `model.json`
+  - SHA-256 for `metadata.json`
+  - SHA-256 for legacy copied model if enabled
+
+## Training data options
+- See:
+  - `docs/training-data-sources.md`
 
 ## Inspect SQLite locally
 - Default DB path:
