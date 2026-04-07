@@ -17,6 +17,7 @@
 - Live trading is now a modular in-repo runtime with separate config, exchange access, signal generation, risk checks, notifications, and main loop modules.
 - Runtime remains single-bot and exchange-specific, but is now testnet-oriented by default and no longer stores secrets in source code.
 - `train_v4.py` and `sentineltest.py` are both backward-compatible thin entrypoints over the new package structure.
+- The repository is now initialized as a private GitHub project at `VItaly0117/project-sentinel`, and the README documents a branch-and-pull-request workflow for collaboration.
 - Focused pytest suites now cover runtime closed-candle gating, duplicate-candle suppression, risk blocking, config/env validation, exchange retry/circuit-breaker behavior, and training split/reproducibility safeguards.
 - Runtime now persists signals, trades, risk snapshots, runtime events, error events, and state markers into a local SQLite database.
 - Runtime startup now reconciles persisted state against exchange open exposure, persists a `last_action_*` marker, skips duplicate action re-entry for the same candle, and fails safe when restart state is ambiguous.
@@ -31,6 +32,7 @@
 ## Current debt and risks
 - There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
 - Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
+- GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
 - In dry-run mode, exchange-side open position/order limits reflect the real account state only; simulated orders do not create exchange exposure.
 - Runtime still depends on a local model artifact named `monster_v4_2.json`.
