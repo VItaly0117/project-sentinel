@@ -8,8 +8,9 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Operator smoke-run clarity: 75%
 - Runtime automated tests: 75%
 - Training pipeline structure: 75%
-- Training reproducibility and auditability: 65%
-- Training automated tests: 60%
+- Training reproducibility and auditability: 80%
+- Training automated tests: 70%
+- Training data-source definition and onboarding clarity: 65%
 
 ## Target-system progress
 - Single-bot research/runtime MVP versus target platform: 30%
@@ -20,8 +21,9 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 
 ## What is already done
 - Runtime config, risk checks, notifications, exchange adapter, SQLite persistence, startup reconciliation, dry-run mode.
-- Training config, time-aware splits, validation-only early stopping, reproducibility seed handling, artifact metadata.
+- Training config, time-aware splits, validation-only early stopping, reproducibility seed handling, artifact metadata, checksums, and dataset fingerprints.
 - Focused pytest coverage for runtime and training safety contracts.
+- A compact data-source note with recommended bootstrap and validation datasets.
 
 ## What is still missing
 - Platform infrastructure and deployment layers.
@@ -30,5 +32,5 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Production-grade multi-instance coordination.
 
 ## Next checkpoint
-- Add artifact integrity metadata for training outputs.
+- Add a first ingestion/normalization utility for one selected market-data source.
 - Optionally split the large runtime test file into smaller modules once the current stabilization wave slows down.

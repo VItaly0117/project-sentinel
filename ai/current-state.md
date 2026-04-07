@@ -28,6 +28,8 @@
 - SQLite runtime state now normalizes naive ISO datetimes to UTC on read, and dry-run order ids use higher-precision timestamps to reduce collision risk.
 - The training pipeline now enforces deterministic seed application, validation-only early stopping, stricter time-order split checks, and richer audit metadata for split boundaries and reproducibility settings.
 - `ai/progress.md` now tracks approximate completion percentages for the MVP and the larger target system, so future sessions can quickly see what is done versus still missing.
+- Training artifacts now include `checksums.json` with SHA-256 hashes for model and metadata files, and training metadata now stores raw-file, feature-frame, label, and feature-name fingerprints.
+- `docs/training-data-sources.md` now records the current recommended data sources for the bot: Binance bulk archives as the first bootstrap base, Bybit market data for exchange-aligned validation, and Coinbase candles as a secondary cross-exchange check.
 
 ## Current debt and risks
 - There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
@@ -38,10 +40,11 @@
 - Runtime still depends on a local model artifact named `monster_v4_2.json`.
 - Training labels still assume OHLC barrier touches are executable and do not capture slippage, spread, latency, or order book effects.
 - Training still has no walk-forward validation, slippage model, spread model, or microstructure-aware execution assumptions.
+- There is still no in-repo downloader/normalizer for exchange datasets yet; the new data-source note is guidance, not an automated ingestion layer.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
 - Some operational protections now exist in code, but persistence, orchestration, and centralized control are still absent.
 
 ## Next step
-- Add a small artifact-integrity layer for training outputs, such as model/metadata hashes or dataset fingerprinting, before widening the research surface.
+- Add a small data ingestion/normalization utility for one chosen source first, most likely Binance bulk klines into the repo's normalized CSV format.
