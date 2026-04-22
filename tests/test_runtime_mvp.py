@@ -1069,7 +1069,7 @@ def _make_runtime(
     monkeypatch.setattr(runtime_module, "ModelSignalEngine", lambda **kwargs: fake_signal_engine)
     monkeypatch.setattr(runtime_module, "RiskManager", lambda config: fake_risk_manager)
     monkeypatch.setattr(runtime_module, "TelegramNotifier", lambda config: fake_notifier)
-    monkeypatch.setattr(runtime_module, "SQLiteRuntimeStorage", lambda db_path, bot_id: fake_storage)
+    monkeypatch.setattr(runtime_module, "create_storage", lambda storage_config: fake_storage)
 
     runtime = runtime_module.TradingRuntime(_app_config(tmp_path, dry_run_mode=dry_run_mode))
     return runtime, fake_exchange, fake_signal_engine, fake_risk_manager, fake_notifier, fake_storage
@@ -1119,6 +1119,8 @@ def _app_config(tmp_path: Path, dry_run_mode: bool = False) -> AppConfig:
         storage=StorageConfig(
             db_path=tmp_path / "runtime.db",
             bot_id="BTCUSDT",
+            database_url=None,
+            database_schema="public",
         ),
         circuit_breaker=CircuitBreakerConfig(
             api_error_threshold=5,
