@@ -66,6 +66,12 @@ def fingerprint_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def fingerprint_bytes(content: bytes) -> str:
+    digest = hashlib.sha256()
+    digest.update(content)
+    return digest.hexdigest()
+
+
 def build_checksums(
     model_path: Path,
     metadata_path: Path,

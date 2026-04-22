@@ -16,3 +16,7 @@ class CircuitBreakerOpen(ExchangeClientError):
 
 class ReconciliationError(SentinelRuntimeError):
     """Raised when startup reconciliation cannot safely continue."""
+
+
+class PreflightError(SentinelRuntimeError):
+    """Raised when local runtime readiness checks fail before launch."""

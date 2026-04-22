@@ -59,7 +59,7 @@ from sentinel_runtime.config import (  # noqa: E402
     load_app_config,
 )
 from sentinel_runtime.errors import CircuitBreakerOpen, ConfigError, ExchangeClientError  # noqa: E402
-from sentinel_runtime.errors import ReconciliationError  # noqa: E402
+from sentinel_runtime.errors import PreflightError, ReconciliationError  # noqa: E402
 import sentinel_runtime.exchange as exchange_module  # noqa: E402
 from sentinel_runtime.models import (  # noqa: E402
     BalanceSnapshot,
@@ -73,6 +73,7 @@ from sentinel_runtime.models import (  # noqa: E402
 )
 from sentinel_runtime.risk import RiskManager  # noqa: E402
 import sentinel_runtime.runtime as runtime_module  # noqa: E402
+from sentinel_runtime.preflight import run_preflight  # noqa: E402
 from sentinel_runtime.storage import SQLiteRuntimeStorage  # noqa: E402
 
 
@@ -704,6 +705,62 @@ def test_load_app_config_defaults_to_dry_run_mode(tmp_path: Path) -> None:
     assert config.runtime.dry_run_mode is True
 
 
+def test_runtime_preflight_passes_and_does_not_start_runtime_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = _write_model_file(tmp_path)
+    env_path = _write_env_file(
+        tmp_path,
+        MODEL_PATH=str(model_path),
+        RUNTIME_DB_PATH=str(tmp_path / "runtime.db"),
+        EXCHANGE_ENV="demo",
+        DRY_RUN_MODE="true",
+    )
+    started = {"value": False}
+
+    def fail_if_started(self) -> None:  # noqa: ANN001
+        started["value"] = True
+        raise AssertionError("Runtime loop should not start during preflight.")
+
+    monkeypatch.setattr(runtime_module.TradingRuntime, "run_forever", fail_if_started)
+
+    exit_code = runtime_module.main(["--preflight", "--env-file", str(env_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert started["value"] is False
+    assert "Runtime preflight passed." in captured.err
+    assert "exchange_env=demo execution_mode=dry-run dry_run_mode=True symbol=BTCUSDT" in captured.err
+    assert not (tmp_path / "runtime.db").exists()
+
+
+def test_runtime_preflight_fails_when_model_path_is_missing(tmp_path: Path) -> None:
+    env_path = _write_env_file(
+        tmp_path,
+        MODEL_PATH=str(tmp_path / "missing-model.json"),
+        RUNTIME_DB_PATH=str(tmp_path / "runtime.db"),
+    )
+
+    with pytest.raises(PreflightError, match="MODEL_PATH does not exist"):
+        run_preflight(env_path)
+
+
+def test_runtime_preflight_fails_when_sqlite_path_is_a_directory(tmp_path: Path) -> None:
+    model_path = _write_model_file(tmp_path)
+    db_directory = tmp_path / "runtime-dir"
+    db_directory.mkdir()
+    env_path = _write_env_file(
+        tmp_path,
+        MODEL_PATH=str(model_path),
+        RUNTIME_DB_PATH=str(db_directory),
+    )
+
+    with pytest.raises(PreflightError, match="must be a file path"):
+        run_preflight(env_path)
+
+
 @pytest.mark.parametrize(
     ("overrides", "error_fragment"),
     [
@@ -1072,6 +1129,12 @@ def _write_env_file(tmp_path: Path, **overrides: str) -> Path:
         encoding="utf-8",
     )
     return env_path
+
+
+def _write_model_file(tmp_path: Path) -> Path:
+    model_path = tmp_path / "monster_v4_2.json"
+    model_path.write_text("{}", encoding="utf-8")
+    return model_path
 
 
 def _frozen_datetime(frozen_now: real_datetime):

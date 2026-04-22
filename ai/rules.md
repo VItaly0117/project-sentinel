@@ -6,7 +6,7 @@
 - Keep outputs compact and implementation-facing.
 
 ## Change guardrails
-- Preserve existing business intent unless explicitly told otherwise.
+- Preservчe existing business intent unless explicitly told otherwise.
 - Distinguish clearly between current state and target architecture.
 - Infer conservatively from the provided files when details are missing.
 - Do not rewrite the whole project unless requested.
