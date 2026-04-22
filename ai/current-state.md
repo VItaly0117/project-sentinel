@@ -94,13 +94,12 @@
 - Edits to the red zone require the `[ALGO-UPDATE]` tag in the user request; agents refuse otherwise.
 - Protocol is documented in `CLAUDE.md` ("Algorithm Sandbox") and `docs/claude-code-handoff.md` ("ALGO-UPDATE protocol").
 
-## Baseline model artifact (2026-04-22)
-- Downloaded `BTCUSDT-5m-2024-01.zip` from `data.binance.vision` (futures/um/monthly/klines).
-- Ingested and normalized to `data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.csv` — 8,928 rows, `csv_verified=true`.
-- Trained baseline XGBoost model via `python3 train_v4.py --data-path ... --experiment-name binance-btcusdt-5m-baseline`.
-- Artifacts written to `artifacts/train_v4/binance-btcusdt-5m-baseline/` (model 2.6M, metadata, checksums).
-- `monster_v4_2.json` overwritten with the real 2.6M XGBoost artifact — no longer a 0-byte dummy.
-- Validation accuracy=0.4988, macro_f1=0.3514; test accuracy=0.5527, macro_f1=0.3015 (research baseline only).
+## Model artifact status (2026-04-23)
+- `monster_v4_2.json` (2.6M) exists — a real XGBoost artifact with 11 engineered features and 1431 boosted trees.
+- This artifact is loaded by default when `STRATEGY_MODE=xgb` (default).
+- The artifact **was** trained from Binance BTCUSDT 5m data (Jan 2024), but the original normalized data and training artifacts have not yet been regenerated in this session.
+- **Day 1 task**: Re-ingest Binance data, run a fresh training baseline, and save artifacts to `artifacts/train_v4/binance-btcusdt-5m-baseline/`.
+- The ingest and training infrastructure is ready; what's missing is the fresh reproducible run and evidence pack.
 
 ## Strategy modes (2026-04-22)
 - `STRATEGY_MODE` env var now selects between `xgb` (default) and `zscore_mean_reversion_v1`.

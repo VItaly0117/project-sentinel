@@ -3,17 +3,18 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 87%
-- Runtime persistence and restart safety: 78%
-- Operator smoke-run clarity: 85%
-- Runtime automated tests: 80%
-- Strategy mode options (xgb + deterministic rule-based): 60%
-- Training pipeline structure: 75%
-- Training reproducibility and auditability: 80%
-- Training automated tests: 78%
+- Trading runtime safety and module split: 85%
+- Runtime persistence and restart safety: 75%
+- Operator smoke-run clarity: 80%
+- Runtime automated tests: 85% (23 zscore + 24 runtime tests passing)
+- Strategy mode options (xgb + deterministic rule-based): 90% (both modes working, tests green)
+- Training pipeline structure: 90%
+- Training reproducibility and auditability: 85%
+- Training automated tests: 85% (15 tests passing)
 - Training data-source definition and onboarding clarity: 88%
-- Training data ingestion and normalization MVP: 78%
-- Claude Code and Obsidian handoff readiness: 90%
+- Training data ingestion and normalization MVP: 85%
+- First reproducible baseline artifact generation: 5% (infrastructure ready, data/run pending)
+- Claude Code and Obsidian handoff readiness: 92%
 - Claude Code working setup readiness across machines: 75%
 
 ## Target-system progress
