@@ -32,6 +32,20 @@
 5. `README.md`
 6. Only then open the specific runtime/training files needed for the task
 
+## Recommended model strategy
+- Default main model:
+  - Sonnet
+- Use Opus only for:
+  - architecture review
+  - hard debugging
+  - final review passes on important diffs
+- Use Haiku-level subagents for:
+  - memory updates
+  - demo docs
+  - compact summaries
+
+This project should not burn budget by using Opus for routine edits, docs, or file gathering.
+
 ## Working rules
 - Prefer small safe patches over broad rewrites.
 - Preserve the current module split unless a change is clearly needed.
@@ -63,6 +77,15 @@
 - Tests:
   - `pytest -q tests/test_runtime_mvp.py`
   - `pytest -q tests/test_training_pipeline.py tests/test_training_ingest.py`
+
+## Claude Code add-ons for this repo
+- Project plugin:
+  - `pyright-lsp@claude-plugins-official`
+- Project subagents:
+  - `runtime-stabilizer`
+  - `training-researcher`
+  - `memory-curator`
+  - `demo-scribe`
 
 ## What not to waste hackathon time on
 - Full target-platform rewrites

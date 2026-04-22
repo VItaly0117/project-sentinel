@@ -205,6 +205,8 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - `CLAUDE.md`
 - Shared Claude settings:
   - `.claude/settings.json`
+- Project Claude subagents:
+  - `.claude/agents/`
 - Hackathon handoff:
   - `docs/claude-code-handoff.md`
   - `docs/hackathon-roadmap.md`
