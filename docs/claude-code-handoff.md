@@ -32,6 +32,27 @@
 - `pytest -q tests/test_runtime_mvp.py`
 - `pytest -q tests/test_training_pipeline.py tests/test_training_ingest.py`
 
+## Recommended Claude Code setup on each machine
+1. Install Claude Code and authenticate.
+2. Install Node.js.
+3. Install the Python LSP binary:
+   - `npm install -g pyright`
+4. Open the repo in Claude Code and trust the folder.
+5. Ensure the project plugin is available:
+   - `pyright-lsp@claude-plugins-official`
+6. Reload plugins if needed:
+   - `/reload-plugins`
+
+This repo intentionally keeps the plugin set small:
+- one Python code-intelligence plugin
+- no extra marketplace clutter
+- no broad external integrations by default
+
+The cost-saving strategy is:
+- Sonnet for main coding work
+- Haiku subagents for memory/docs
+- Opus only for hard review or hard debugging
+
 ## Claude operating mode for the hackathon
 - Work in narrow PR-sized slices.
 - Keep outputs compact and decision-focused.

@@ -45,9 +45,13 @@
 - The repository is now also prepared for a Claude Code handoff:
   - root `CLAUDE.md`
   - `.claude/settings.json`
+  - `.claude/agents/`
   - `docs/claude-code-handoff.md`
   - `docs/hackathon-roadmap.md`
   - `docs/hackathon-demo-checklist.md`
+- Claude Code project settings now declare one official plugin for this repo:
+  - `pyright-lsp@claude-plugins-official`
+- The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
 ## Current debt and risks
@@ -65,6 +69,7 @@
 - Ingest timestamp support is intentionally narrow for now: saved source files must provide Unix milliseconds for candle open times.
 - The new inspect helper validates metadata against the CSV, but it is still an operator-side check, not a broader artifact registry or dataset catalog.
 - Claude Code handoff is prepared at the documentation/settings level, but the actual 5-day implementation sprint still depends on disciplined task slicing and daily memory updates.
+- Claude Code plugin support on each machine still depends on local tool installation, especially `pyright`, because the Python LSP plugin needs the local `pyright-langserver` binary.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.

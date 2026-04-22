@@ -13,6 +13,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Training data-source definition and onboarding clarity: 88%
 - Training data ingestion and normalization MVP: 78%
 - Claude Code and Obsidian handoff readiness: 90%
+- Claude Code working setup readiness across machines: 75%
 
 ## Target-system progress
 - Single-bot research/runtime MVP versus target platform: 30%
@@ -29,6 +30,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - A compact data-source note plus a local-first ingest CLI for Binance and Bybit raw candle files.
 - A tiny metadata inspection helper and copy-paste local walkthroughs for first Binance and Bybit dataset-generation runs.
 - Claude Code project instructions, project settings, hackathon roadmap, demo checklist, and an Obsidian-ready memory graph starter.
+- A small Claude Code working set: one official Python LSP plugin plus specialized low-cost project subagents.
 
 ## What is still missing
 - Platform infrastructure and deployment layers.
@@ -40,6 +42,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - A full operator playbook that goes from normalized data to a documented first baseline training run.
 - Exchange-credential verification against a real Bybit endpoint before launch.
 - The actual 5-day execution backlog still needs to be burned down against real data, real `.env`, and real demo artifacts.
+- Multi-machine Claude Code setup still depends on local installation of Claude Code, Node.js, and `pyright`.
 
 ## Next checkpoint
 - Execute Day 1 of `docs/hackathon-roadmap.md`: real preflight, real dry-run, and one real ingest path.
