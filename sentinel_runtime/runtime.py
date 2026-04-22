@@ -67,8 +67,10 @@ class TradingRuntime:
         self._last_action_order_id: str | None = None
         self._last_block_reason: str | None = None
         self._dry_run_equity: Decimal = Decimal("0")
+        self._started_at: datetime | None = None
 
     def bootstrap(self) -> None:
+        self._started_at = datetime.now(timezone.utc)
         persisted_state = self._storage.load_runtime_state()
         self._last_processed_candle_time = persisted_state.last_processed_candle_time
         self._last_reported_closed_trade_id = persisted_state.last_reported_closed_trade_id
@@ -110,6 +112,8 @@ class TradingRuntime:
             self._config.exchange.symbol,
             self._risk_manager.starting_balance,
         )
+        self._notifier.register_status_callback(self._get_bot_status)
+        self._notifier.start_command_listener()
 
     def run_forever(self) -> None:
         try:
@@ -133,21 +137,24 @@ class TradingRuntime:
             },
         )
 
-        while True:
-            try:
-                self.run_once()
-            except CircuitBreakerOpen as exc:
-                self._logger.warning("%s", exc)
-                self._record_error_event("circuit_breaker_open", exc)
-            except ExchangeClientError as exc:
-                self._logger.error("Exchange error: %s", exc)
-                self._record_error_event("exchange_client_error", exc)
-            except Exception as exc:
-                self._logger.exception("Unhandled runtime error.")
-                self._record_error_event("unhandled_runtime_error", exc)
-                self._notifier.send_runtime_error(str(exc))
+        try:
+            while True:
+                try:
+                    self.run_once()
+                except CircuitBreakerOpen as exc:
+                    self._logger.warning("%s", exc)
+                    self._record_error_event("circuit_breaker_open", exc)
+                except ExchangeClientError as exc:
+                    self._logger.error("Exchange error: %s", exc)
+                    self._record_error_event("exchange_client_error", exc)
+                except Exception as exc:
+                    self._logger.exception("Unhandled runtime error.")
+                    self._record_error_event("unhandled_runtime_error", exc)
+                    self._notifier.send_runtime_error(str(exc))
 
-            time.sleep(self._config.runtime.poll_interval_seconds)
+                time.sleep(self._config.runtime.poll_interval_seconds)
+        finally:
+            self._notifier.stop_command_listener()
 
     def run_once(self) -> None:
         self._report_newly_closed_trade()
@@ -491,6 +498,28 @@ class TradingRuntime:
         self._last_action_candle_time = None
         self._last_action_side = None
         self._last_action_order_id = None
+
+    def _get_bot_status(self) -> dict:
+        """Return a status snapshot for the Telegram /status command. Read-only; no GIL risk."""
+        now = datetime.now(timezone.utc)
+        started = self._started_at or now
+        elapsed = int((now - started).total_seconds())
+        hours, remainder = divmod(elapsed, 3600)
+        minutes = remainder // 60
+        return {
+            "execution_mode": "dry-run" if self._config.runtime.dry_run_mode else "live-orders",
+            "symbol": self._config.exchange.symbol,
+            "equity": str(self._dry_run_equity) if self._config.runtime.dry_run_mode else "N/A",
+            "starting_balance": str(self._risk_manager.starting_balance),
+            "last_action_side": self._last_action_side or "none",
+            "last_action_order_id": self._last_action_order_id or "none",
+            "last_action_candle_time": (
+                self._last_action_candle_time.isoformat()
+                if self._last_action_candle_time is not None
+                else "none"
+            ),
+            "uptime": f"{hours}h {minutes}m",
+        }
 
     @staticmethod
     def _closed_candles_only(candles: pd.DataFrame, interval_minutes: int) -> pd.DataFrame:

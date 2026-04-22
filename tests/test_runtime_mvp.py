@@ -250,6 +250,15 @@ class FakeNotifier:
     def send_runtime_error(self, error_message: str) -> None:
         self.runtime_errors.append(error_message)
 
+    def register_status_callback(self, callback) -> None:  # noqa: ANN001
+        self._status_callback = callback
+
+    def start_command_listener(self) -> None:
+        pass
+
+    def stop_command_listener(self) -> None:
+        pass
+
 
 class FakeStorage:
     def __init__(self, initial_state: RuntimeState | None = None) -> None:
@@ -962,6 +971,42 @@ def test_sqlite_runtime_storage_normalizes_naive_datetimes_to_utc(tmp_path: Path
         5,
         tzinfo=timezone.utc,
     )
+
+
+def test_get_bot_status_returns_expected_shape_after_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candles = _build_candles(["2026-04-06T12:00:00Z", "2026-04-06T12:05:00Z"])
+    runtime, _, _, _, fake_notifier, _ = _make_runtime(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=candles,
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        dry_run_mode=True,
+    )
+
+    runtime.bootstrap()
+    status = runtime._get_bot_status()
+
+    assert set(status.keys()) == {
+        "execution_mode",
+        "symbol",
+        "equity",
+        "starting_balance",
+        "last_action_side",
+        "last_action_order_id",
+        "last_action_candle_time",
+        "uptime",
+    }
+    assert status["execution_mode"] == "dry-run"
+    assert status["symbol"] == "BTCUSDT"
+    assert "h" in status["uptime"] and "m" in status["uptime"]
+    assert status["last_action_side"] == "none"
+    # callback was registered in FakeNotifier
+    assert hasattr(fake_notifier, "_status_callback")
+    assert callable(fake_notifier._status_callback)
 
 
 def _make_runtime(
