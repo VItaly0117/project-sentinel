@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Sequence
 
 import pandas as pd
 
 from .config import AppConfig, load_app_config
 from .errors import CircuitBreakerOpen, ConfigError, ExchangeClientError, PreflightError, ReconciliationError
-from .models import ExchangeExposureSnapshot, SignalDecision
+from .models import BalanceSnapshot, ExchangeExposureSnapshot, SignalDecision
 from .preflight import build_preflight_parser, log_preflight_report, run_preflight
 
 if TYPE_CHECKING:
@@ -65,6 +66,7 @@ class TradingRuntime:
         self._last_action_side: str | None = None
         self._last_action_order_id: str | None = None
         self._last_block_reason: str | None = None
+        self._dry_run_equity: Decimal = Decimal("0")
 
     def bootstrap(self) -> None:
         persisted_state = self._storage.load_runtime_state()
@@ -74,8 +76,12 @@ class TradingRuntime:
         self._last_action_side = persisted_state.last_action_side
         self._last_action_order_id = persisted_state.last_action_order_id
         self._risk_manager.restore_starting_balance(persisted_state.starting_balance)
-        balance_snapshot = self._exchange.get_balance_snapshot()
-        self._risk_manager.bootstrap(balance_snapshot.total_equity)
+        if self._config.runtime.dry_run_mode:
+            self._dry_run_equity = self._risk_manager.starting_balance or Decimal("0")
+            self._risk_manager.bootstrap(self._dry_run_equity)
+        else:
+            balance_snapshot = self._exchange.get_balance_snapshot()
+            self._risk_manager.bootstrap(balance_snapshot.total_equity)
         latest_closed_trade = self._exchange.get_latest_closed_trade()
         if latest_closed_trade is not None and self._last_reported_closed_trade_id is None:
             self._last_reported_closed_trade_id = latest_closed_trade.order_id
@@ -263,10 +269,19 @@ class TradingRuntime:
 
     def _evaluate_risk(self):
         current_time = datetime.now(timezone.utc)
-        balance_snapshot = self._exchange.get_balance_snapshot()
-        daily_realized_pnl = self._exchange.get_daily_realized_pnl(current_time)
-        open_positions = self._exchange.get_open_positions_count()
-        open_orders = self._exchange.get_open_orders_count()
+        if self._config.runtime.dry_run_mode:
+            balance_snapshot = BalanceSnapshot(
+                total_equity=self._dry_run_equity,
+                available_balance=self._dry_run_equity,
+            )
+            daily_realized_pnl = Decimal("0")
+            open_positions = 0
+            open_orders = 0
+        else:
+            balance_snapshot = self._exchange.get_balance_snapshot()
+            daily_realized_pnl = self._exchange.get_daily_realized_pnl(current_time)
+            open_positions = self._exchange.get_open_positions_count()
+            open_orders = self._exchange.get_open_orders_count()
         evaluation = self._risk_manager.evaluate(
             balance_snapshot=balance_snapshot,
             daily_realized_pnl=daily_realized_pnl,

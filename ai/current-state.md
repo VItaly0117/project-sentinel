@@ -75,5 +75,13 @@
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
 - Some operational protections now exist in code, but persistence, orchestration, and centralized control are still absent.
 
+## Baseline model artifact (2026-04-22)
+- Downloaded `BTCUSDT-5m-2024-01.zip` from `data.binance.vision` (futures/um/monthly/klines).
+- Ingested and normalized to `data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.csv` — 8,928 rows, `csv_verified=true`.
+- Trained baseline XGBoost model via `python3 train_v4.py --data-path ... --experiment-name binance-btcusdt-5m-baseline`.
+- Artifacts written to `artifacts/train_v4/binance-btcusdt-5m-baseline/` (model 2.6M, metadata, checksums).
+- `monster_v4_2.json` overwritten with the real 2.6M XGBoost artifact — no longer a 0-byte dummy.
+- Validation accuracy=0.4988, macro_f1=0.3514; test accuracy=0.5527, macro_f1=0.3015 (research baseline only).
+
 ## Next step
-- Start the hackathon execution flow from `docs/hackathon-roadmap.md`: first confirm runtime preflight + dry-run on the real `.env`, then generate the first real Binance dataset and baseline training artifact.
+- Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
