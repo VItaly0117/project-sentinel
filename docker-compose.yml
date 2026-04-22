@@ -1,0 +1,74 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Project Sentinel — local multi-bot demo stack
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in Bybit demo credentials.
+#   2. Both bot services default to DRY_RUN_MODE=true — safe for smoke runs.
+#   3. Each bot gets its own PostgreSQL schema (btcusdt / ethusdt) so that
+#      runtime_state rows don't collide inside the shared database.
+#
+# Launch:
+#   docker compose up --build
+#
+# Postgres only (useful for manual inspection):
+#   docker compose up postgres
+# ---------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel_dev
+      POSTGRES_DB: sentinel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  btc-bot:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel_dev@postgres:5432/sentinel
+      DATABASE_SCHEMA: btcusdt
+      BYBIT_SYMBOL: BTCUSDT
+      DRY_RUN_MODE: "true"
+      EXCHANGE_ENV: demo
+      MODEL_PATH: /app/monster_v4_2.json
+      # SQLite path is ignored when DATABASE_URL is set; kept for preflight compat
+      RUNTIME_DB_PATH: /tmp/btc_runtime.db
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+  eth-bot:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel_dev@postgres:5432/sentinel
+      DATABASE_SCHEMA: ethusdt
+      BYBIT_SYMBOL: ETHUSDT
+      DRY_RUN_MODE: "true"
+      EXCHANGE_ENV: demo
+      MODEL_PATH: /app/monster_v4_2.json
+      RUNTIME_DB_PATH: /tmp/eth_runtime.db
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -66,6 +66,9 @@ class RuntimeConfig:
 @dataclass(frozen=True)
 class StorageConfig:
     db_path: Path
+    bot_id: str
+    database_url: str | None  # if set, use PostgreSQL instead of SQLite
+    database_schema: str  # PostgreSQL schema namespace; ignored for SQLite
 
 
 @dataclass(frozen=True)
@@ -164,7 +167,15 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         dry_run_mode=dry_run_mode,
         allow_live_mode=allow_live_mode,
     )
-    storage = StorageConfig(db_path=db_path)
+    bot_id = _read_env("BOT_ID", exchange.symbol)
+    database_url = _read_optional_env("DATABASE_URL")
+    database_schema = _read_env("DATABASE_SCHEMA", "public")
+    storage = StorageConfig(
+        db_path=db_path,
+        bot_id=bot_id,
+        database_url=database_url,
+        database_schema=database_schema,
+    )
     circuit_breaker = CircuitBreakerConfig(
         api_error_threshold=_parse_int("API_ERROR_THRESHOLD", 5, minimum=1),
         error_window_seconds=_parse_int("API_ERROR_WINDOW_SECONDS", 60, minimum=1),

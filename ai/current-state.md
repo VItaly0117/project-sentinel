@@ -54,8 +54,21 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
+## Docker + PostgreSQL (2026-04-22)
+- `requirements.txt` created with all runtime/training/DB deps.
+- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
+- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+- `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
+- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
+- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
+- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
+- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- **Launch command:** `docker compose up --build`
+
 ## Current debt and risks
-- There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
+- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
 - Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
@@ -98,6 +111,18 @@
 - Dynamic ATR-based TP/SL is intentionally deferred — `TP_PCT` / `SL_PCT` still drive exits. Code structure makes that follow-up patch small.
 - New test file `tests/test_zscore_strategy.py` covers math helpers, insufficient-history short-circuit, long/short signal triggers, ATR-band gate, volume-z-score gate, and config parsing (default, explicit switch, invalid value).
 
+## API + Dashboard layer (2026-04-22)
+- Minimal read-only FastAPI server at `api/` — no dependency on trading core, reads the runtime SQLite DB directly.
+- Five endpoints: `GET /api/health`, `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`.
+- Dashboard HTML at `dashboard/index.html` — single file, Tailwind CDN, vanilla JS, auto-refreshes every 15 s.
+- Served from the same `uvicorn api.main:app` process; no separate static server needed.
+- DB path resolved from `RUNTIME_DB_PATH` env var (same default as the runtime: `artifacts/runtime/sentinel_runtime.db`).
+- All DB access is read-only (`?mode=ro` URI); API never writes to the runtime DB.
+- To install API deps: `pip install -r requirements-api.txt`
+- To run: `uvicorn api.main:app --reload --port 8000` from project root, then open `http://localhost:8000`.
+- Auto-docs at `http://localhost:8000/api/docs`.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
+- Start the API server alongside the runtime to verify the dashboard reads live data.
