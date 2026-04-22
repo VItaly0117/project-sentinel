@@ -60,6 +60,14 @@ The cost-saving strategy is:
 - Update `ai/` after major tasks.
 - Treat docs, demo reliability, and operator clarity as part of the product.
 
+## ALGO-UPDATE protocol
+- All algorithm/math files are READ-ONLY for AI agents by default. The full list lives under "Algorithm Sandbox" in `CLAUDE.md`.
+- To authorize an edit to the red zone, include the literal `[ALGO-UPDATE]` tag in your request, for example:
+  - `[ALGO-UPDATE] Add volume_delta_5 feature to feature_engine.py per Dima's spec.`
+- Without the tag, every agent must refuse. With the tag, any change to a public method signature requires caller-grep confirmation first.
+- Model artifacts (`monster_v4_2.json`, `artifacts/train_v4/**/*`) are never hand-edited — only regenerated via a full `train_v4.py` run.
+- Agent zones are documented in each `.claude/agents/*.md` file. Memory-curator owns `ai/` and `obsidian/`; demo-scribe owns README and hackathon docs; runtime-stabilizer owns non-algo runtime; training-researcher owns data/ingest/artifacts infrastructure.
+
 ## Demo success criteria
 - Runtime preflight passes on the real `.env`
 - First dry-run starts cleanly

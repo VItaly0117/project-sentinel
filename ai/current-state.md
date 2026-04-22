@@ -75,6 +75,12 @@
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
 - Some operational protections now exist in code, but persistence, orchestration, and centralized control are still absent.
 
+## AI agent orchestration (active 2026-04-22)
+- Four subagents are formalized with explicit allowed/forbidden file lists: `runtime-stabilizer`, `training-researcher`, `memory-curator`, `demo-scribe`.
+- Dima's algorithm red zone is READ-ONLY for every agent by default: `sentinel_runtime/feature_engine.py`, `sentinel_runtime/signals.py`, `sentinel_training/labels.py`, `sentinel_training/pipeline.py`, `sentinel_training/trainer.py`, `sentinel_training/evaluation.py`, `sentinel_training/config.py`.
+- Edits to the red zone require the `[ALGO-UPDATE]` tag in the user request; agents refuse otherwise.
+- Protocol is documented in `CLAUDE.md` ("Algorithm Sandbox") and `docs/claude-code-handoff.md` ("ALGO-UPDATE protocol").
+
 ## Baseline model artifact (2026-04-22)
 - Downloaded `BTCUSDT-5m-2024-01.zip` from `data.binance.vision` (futures/um/monthly/klines).
 - Ingested and normalized to `data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.csv` — 8,928 rows, `csv_verified=true`.

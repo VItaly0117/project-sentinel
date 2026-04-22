@@ -55,6 +55,24 @@ This project should not burn budget by using Opus for routine edits, docs, or fi
 - Do not read `.env` unless the user explicitly asks; prefer `.env.example`.
 - Update `ai/current-state.md`, `ai/progress.md`, and `ai/session-notes/` after meaningful work.
 
+## Algorithm Sandbox (Dima's red zone)
+Dima owns the trading math. The following files are READ-ONLY for every AI agent by default:
+- `sentinel_runtime/feature_engine.py` — indicators (RSI, ATR, velocity, bear_div, vol_zscore, …)
+- `sentinel_runtime/signals.py` — confidence threshold → Buy/Sell/None decision
+- `sentinel_training/labels.py` — barrier-touch label logic
+- `sentinel_training/pipeline.py` — training orchestration
+- `sentinel_training/trainer.py` — fit loop
+- `sentinel_training/evaluation.py` — metrics (F1, accuracy, log_loss)
+- `sentinel_training/config.py` — label params, model hyperparameters, split ratios
+
+Rules for every agent (runtime-stabilizer, training-researcher, memory-curator, demo-scribe):
+- Red-zone files may be read for context, but never edited without the explicit `[ALGO-UPDATE]` tag in the user request.
+- Without `[ALGO-UPDATE]`, refuse and ask the user to either tag the request or route it through Dima.
+- Even with `[ALGO-UPDATE]`, signature changes to public methods (`add_features`, `evaluate`, `create_labels`, `train_sentinel`) require grep-confirming all callers before editing.
+- Never hand-edit `monster_v4_2.json` or `artifacts/train_v4/**/*` — regenerate only via a full `train_v4.py` run.
+- Agents must not change algorithm constants (thresholds, split ratios, label values) without `[ALGO-UPDATE]`.
+- Diagnose first, propose second. Never silently rewrite math.
+
 ## Highest-value workstreams
 - Runtime launch readiness and operator clarity
 - Training reproducibility and auditability
