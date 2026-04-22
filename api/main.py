@@ -39,11 +39,21 @@ def bot_status():
     state = _db.get_runtime_state(db_path)
     dry_run = os.environ.get("DRY_RUN_MODE", "true").lower() not in ("0", "false", "no", "off")
     strategy = os.environ.get("STRATEGY_MODE", "xgb")
+    database_url = os.environ.get("DATABASE_URL", "").strip() or None
+    if database_url:
+        backend = "postgres"
+        storage_target = f"postgresql://.../{os.environ.get('DATABASE_SCHEMA', 'public')}"
+    else:
+        backend = "sqlite"
+        storage_target = str(db_path)
     return {
         "dry_run_mode": dry_run,
         "strategy_mode": strategy,
+        "storage_backend": backend,
+        "storage_target": storage_target,
         "db_path": str(db_path),
         "db_exists": _db.db_exists(db_path),
+        "bot_id": os.environ.get("BOT_ID") or os.environ.get("BYBIT_SYMBOL"),
         "last_processed_candle_time": state.get("last_processed_candle_time"),
         "last_action_side": state.get("last_action_side"),
         "last_action_order_id": state.get("last_action_order_id"),

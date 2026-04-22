@@ -121,10 +121,14 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 
 ## Docker / multi-bot local stack
 
+For full VPS deployment steps, smoke-test commands, and a rollback
+checklist, see `docs/vps-deployment.md`.
+
 ### Prerequisites
 
 1. Copy `.env.example` to `.env` and fill in your Bybit demo API key and secret.
 2. Both bot services default to `DRY_RUN_MODE=true` — safe to start immediately.
+3. Drop `monster_v4_2.json` at the repo root (it is gitignored).
 
 ### Launch the full stack
 
@@ -132,12 +136,13 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 docker compose up --build
 ```
 
-This starts three containers:
+This starts four containers:
 | Service | Description |
 |---------|-------------|
-| `postgres` | PostgreSQL 16 (local dev credentials; no real secrets) |
-| `btc-bot` | Sentinel runtime for `BTCUSDT`, schema `btcusdt` |
-| `eth-bot` | Sentinel runtime for `ETHUSDT`, schema `ethusdt` |
+| `postgres` | PostgreSQL 16 (healthchecked, log-rotated) |
+| `btc-bot` | Sentinel runtime for `BTCUSDT`, schema `btcusdt`, preflight-gated |
+| `eth-bot` | Sentinel runtime for `ETHUSDT`, schema `ethusdt`, preflight-gated |
+| `api` | Read-only FastAPI dashboard on `127.0.0.1:8000` |
 
 ### Start only PostgreSQL (manual inspection)
 
