@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/test_logs.md",
+                "file": "CLAUDE.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "test_logs"
+              "title": "CLAUDE"
             }
           }
         ]
@@ -217,25 +217,28 @@
   },
   "active": "512f1e479d7d829e",
   "lastOpenFiles": [
+    "artifacts/runtime/sentinel_runtime.db-shm",
+    "artifacts/runtime/sentinel_runtime.db-wal",
+    "ai/session-notes/2026-04-22_session-5_zscore_strategy.md",
+    "sentinel_runtime/strategies/__pycache__/zscore_mean_reversion.cpython-314.pyc",
+    "sentinel_runtime/strategies/__pycache__/__init__.cpython-314.pyc",
+    "sentinel_runtime/strategies/__pycache__",
+    "tests/__pycache__/test_zscore_strategy.cpython-314-pytest-9.0.2.pyc",
+    "tests/test_zscore_strategy.py",
+    "sentinel_runtime/strategies/zscore_mean_reversion.py",
+    "sentinel_runtime/strategies/__init__.py",
+    "sentinel_runtime/strategies",
+    "CLAUDE.md",
+    "obsidian/07_demo_story.md",
+    "docs/test_logs.md",
     "ai/session-notes/2026-04-22_session-3.md",
     "SECURITY.md",
-    "LICENSE",
     "obsidian/README.md",
     "README.md",
-    "docs/test_logs.md",
     "docs/hackathon-roadmap.md",
     "obsidian/01_project_essence.md",
     "obsidian/02_current_state.md",
     "docs/claude-code-handoff.md",
-    "artifacts/runtime/sentinel_runtime.db-shm",
-    "artifacts/runtime/sentinel_runtime.db-wal",
-    "artifacts/runtime/sentinel_runtime.db",
-    "artifacts/train_v4/binance-btcusdt-5m-baseline/checksums.json",
-    "artifacts/train_v4/binance-btcusdt-5m-baseline/metadata.json",
-    "artifacts/train_v4/binance-btcusdt-5m-baseline/model.json",
-    "artifacts/train_v4/binance-btcusdt-5m-baseline",
-    "artifacts/train_v4",
-    "data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.metadata.json",
     "2026-04-22.md",
     "obsidian/04_runtime_track.md",
     "obsidian/00_home.md"
