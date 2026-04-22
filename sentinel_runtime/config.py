@@ -15,6 +15,11 @@ class ExchangeEnvironment(str, Enum):
     LIVE = "live"
 
 
+class StrategyMode(str, Enum):
+    XGB = "xgb"
+    ZSCORE_MEAN_REVERSION_V1 = "zscore_mean_reversion_v1"
+
+
 @dataclass(frozen=True)
 class ExchangeConfig:
     api_key: str
@@ -37,6 +42,7 @@ class StrategyConfig:
     tp_pct: Decimal
     sl_pct: Decimal
     price_decimals: int
+    strategy_mode: StrategyMode = StrategyMode.XGB
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,16 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
     if environment is ExchangeEnvironment.LIVE and not allow_live_mode:
         raise ConfigError("Live mode requires ALLOW_LIVE_MODE=true.")
 
+    raw_strategy_mode = _read_env("STRATEGY_MODE", StrategyMode.XGB.value).lower()
+    try:
+        strategy_mode = StrategyMode(raw_strategy_mode)
+    except ValueError as exc:
+        valid_modes = ", ".join(mode.value for mode in StrategyMode)
+        raise ConfigError(
+            f"Unsupported STRATEGY_MODE value: {raw_strategy_mode}. "
+            f"Valid modes: {valid_modes}."
+        ) from exc
+
     model_path = Path(_read_env("MODEL_PATH", "monster_v4_2.json")).expanduser()
     if not model_path.is_absolute():
         model_path = (Path.cwd() / model_path).resolve()
@@ -132,6 +148,7 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         tp_pct=_parse_decimal("TP_PCT", "0.012", minimum=Decimal("0")),
         sl_pct=_parse_decimal("SL_PCT", "0.006", minimum=Decimal("0")),
         price_decimals=_parse_int("PRICE_DECIMALS", 2, minimum=0),
+        strategy_mode=strategy_mode,
     )
     risk = RiskConfig(
         max_daily_loss_pct=_parse_decimal("MAX_DAILY_LOSS_PCT", "0.05", minimum=Decimal("0"), maximum=Decimal("1")),

@@ -89,5 +89,16 @@
 - `monster_v4_2.json` overwritten with the real 2.6M XGBoost artifact — no longer a 0-byte dummy.
 - Validation accuracy=0.4988, macro_f1=0.3514; test accuracy=0.5527, macro_f1=0.3015 (research baseline only).
 
+## Strategy modes (2026-04-22)
+- `STRATEGY_MODE` env var now selects between `xgb` (default) and `zscore_mean_reversion_v1`.
+- XGB path is unchanged: same `ModelSignalEngine`, same `monster_v4_2.json` load, same `SignalDecision` shape.
+- New deterministic engine lives at `sentinel_runtime/strategies/zscore_mean_reversion.py` with pure-math helpers (`compute_rolling_zscore`, `compute_rsi`, `compute_atr`, `compute_volume_zscore`) unit-tested in isolation.
+- Engine interface is the same `.evaluate(candles) -> SignalDecision`, so runtime loop, risk manager, SQLite persistence, reconciliation, notifications, and dry-run simulation are reused unchanged.
+- Defaults match spec: zscore_window=48, entries at ±2.1, RSI thresholds 32/68, ATR% band 0.0025–0.018, volume_zscore_min=-0.5, min_history=53.
+- When the new mode is active, `MODEL_PATH` is still parsed but the XGBoost artifact is not loaded into memory.
+- Dynamic ATR-based TP/SL is intentionally deferred — `TP_PCT` / `SL_PCT` still drive exits. Code structure makes that follow-up patch small.
+- New test file `tests/test_zscore_strategy.py` covers math helpers, insufficient-history short-circuit, long/short signal triggers, ATR-band gate, volume-z-score gate, and config parsing (default, explicit switch, invalid value).
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
+- Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

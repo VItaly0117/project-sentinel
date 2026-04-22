@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Sequence
 
 import pandas as pd
 
-from .config import AppConfig, load_app_config
+from .config import AppConfig, StrategyMode, load_app_config
 from .errors import CircuitBreakerOpen, ConfigError, ExchangeClientError, PreflightError, ReconciliationError
 from .models import BalanceSnapshot, ExchangeExposureSnapshot, SignalDecision
 from .preflight import build_preflight_parser, log_preflight_report, run_preflight
@@ -55,10 +55,14 @@ class TradingRuntime:
         )
         self._notifier = notifier_cls(config.notifications)
         self._risk_manager = risk_manager_cls(config.risk)
-        self._signal_engine = signal_engine_cls(
-            model_path=config.strategy.model_path,
-            confidence_threshold=config.strategy.confidence_threshold,
-        )
+        if config.strategy.strategy_mode == StrategyMode.ZSCORE_MEAN_REVERSION_V1:
+            from .strategies.zscore_mean_reversion import ZscoreMeanReversionEngine
+            self._signal_engine = ZscoreMeanReversionEngine()
+        else:
+            self._signal_engine = signal_engine_cls(
+                model_path=config.strategy.model_path,
+                confidence_threshold=config.strategy.confidence_threshold,
+            )
         self._storage = storage_cls(config.storage.db_path)
         self._last_processed_candle_time: datetime | None = None
         self._last_reported_closed_trade_id: str | None = None
@@ -106,9 +110,10 @@ class TradingRuntime:
             },
         )
         self._logger.info(
-            "Runtime bootstrapped. mode=%s execution=%s symbol=%s baseline_balance=%s",
+            "Runtime bootstrapped. mode=%s execution=%s strategy=%s symbol=%s baseline_balance=%s",
             self._config.exchange.environment.value,
             "dry-run" if self._config.runtime.dry_run_mode else "live-orders",
+            self._config.strategy.strategy_mode.value,
             self._config.exchange.symbol,
             self._risk_manager.starting_balance,
         )

@@ -96,6 +96,29 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
    - `dry_run_order_simulated`, or
    - `trading_blocked`
 
+## Strategy modes
+- Config switch:
+  - `STRATEGY_MODE=xgb` (default) — current XGBoost `monster_v4_2.json` path, unchanged.
+  - `STRATEGY_MODE=zscore_mean_reversion_v1` — deterministic rule-based engine that ignores the XGBoost model and fires entries on z-score / RSI / ATR% / volume-z-score thresholds.
+- When `STRATEGY_MODE=zscore_mean_reversion_v1`:
+  - No XGBoost model is loaded; `MODEL_PATH` is ignored for signal generation.
+  - Runtime execution, persistence, risk checks, notifications, reconciliation, and dry-run behavior are unchanged.
+  - TP/SL still come from `TP_PCT` / `SL_PCT`; dynamic ATR-based exits are a follow-up patch.
+- Default entry rules (long):
+  - `z_t <= -2.1` AND `RSI(14) <= 32` AND `0.0025 <= ATR/close <= 0.018` AND `volume_zscore >= -0.5`.
+- Default entry rules (short):
+  - `z_t >= 2.1` AND `RSI(14) >= 68` AND `0.0025 <= ATR/close <= 0.018` AND `volume_zscore >= -0.5`.
+- Rolling windows: z-score 48, RSI 14, ATR 14, volume z-score 20. Minimum history before the engine fires: 53 closed candles.
+- Safe smoke run:
+  1. `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight`
+  2. Keep `DRY_RUN_MODE=true` and `EXCHANGE_ENV=demo`.
+  3. `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py`
+  4. Watch logs for `Strategy=zscore_mean_reversion_v1 … action=Buy|Sell|None` and runtime events `dry_run_order_simulated` in SQLite.
+- Caveats:
+  - Rule thresholds are deterministic but **not** a profit guarantee.
+  - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
+  - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
+
 ## Tests
 - Runtime:
   - `pytest -q tests/test_runtime_mvp.py`

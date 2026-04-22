@@ -3,10 +3,11 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 80%
+- Trading runtime safety and module split: 82%
 - Runtime persistence and restart safety: 70%
 - Operator smoke-run clarity: 85%
-- Runtime automated tests: 75%
+- Runtime automated tests: 80%
+- Strategy mode options (xgb + deterministic rule-based): 60%
 - Training pipeline structure: 75%
 - Training reproducibility and auditability: 80%
 - Training automated tests: 78%
@@ -24,6 +25,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 
 ## What is already done
 - Runtime config, risk checks, notifications, exchange adapter, SQLite persistence, startup reconciliation, dry-run mode.
+- Parallel deterministic strategy mode `zscore_mean_reversion_v1` alongside the existing `xgb` path, selected via `STRATEGY_MODE`; no regression to the XGBoost flow.
 - Runtime preflight checks for env/config, model path, SQLite path, and execution-mode visibility before first launch.
 - Training config, time-aware splits, validation-only early stopping, reproducibility seed handling, artifact metadata, checksums, and dataset fingerprints.
 - Focused pytest coverage for runtime, training, and ingest normalization contracts, including timestamp validation, embedded header stripping, ZIP content hashing, and alias-conflict checks.
