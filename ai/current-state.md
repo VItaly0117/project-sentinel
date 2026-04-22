@@ -99,6 +99,18 @@
 - Dynamic ATR-based TP/SL is intentionally deferred — `TP_PCT` / `SL_PCT` still drive exits. Code structure makes that follow-up patch small.
 - New test file `tests/test_zscore_strategy.py` covers math helpers, insufficient-history short-circuit, long/short signal triggers, ATR-band gate, volume-z-score gate, and config parsing (default, explicit switch, invalid value).
 
+## API + Dashboard layer (2026-04-22)
+- Minimal read-only FastAPI server at `api/` — no dependency on trading core, reads the runtime SQLite DB directly.
+- Five endpoints: `GET /api/health`, `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`.
+- Dashboard HTML at `dashboard/index.html` — single file, Tailwind CDN, vanilla JS, auto-refreshes every 15 s.
+- Served from the same `uvicorn api.main:app` process; no separate static server needed.
+- DB path resolved from `RUNTIME_DB_PATH` env var (same default as the runtime: `artifacts/runtime/sentinel_runtime.db`).
+- All DB access is read-only (`?mode=ro` URI); API never writes to the runtime DB.
+- To install API deps: `pip install -r requirements-api.txt`
+- To run: `uvicorn api.main:app --reload --port 8000` from project root, then open `http://localhost:8000`.
+- Auto-docs at `http://localhost:8000/api/docs`.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
+- Start the API server alongside the runtime to verify the dashboard reads live data.

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentinel Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace; }
+    .pnl-pos { color: #34d399; }
+    .pnl-neg { color: #f87171; }
+    .pnl-zero { color: #6b7280; }
+    .badge-buy  { background:#064e3b; color:#34d399; }
+    .badge-sell { background:#4c1d1d; color:#f87171; }
+    .badge-info { background:#1e3a5f; color:#93c5fd; }
+    .badge-warn { background:#3f2c0a; color:#fcd34d; }
+    .badge-error{ background:#4c1d1d; color:#f87171; }
+    .badge-closed{ background:#064e3b; color:#6ee7b7; }
+    .badge-opened{ background:#1f2937; color:#d1d5db; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinning { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- ── Header ────────────────────────────────────────────── -->
+  <header class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-sm font-bold tracking-[0.2em] text-white">SENTINEL</span>
+      <span class="text-gray-600">▸</span>
+      <span class="text-gray-400 text-xs">Trading Dashboard</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <span id="mode-badge" class="px-2 py-0.5 rounded text-xs font-bold tracking-wide bg-gray-800 text-gray-500">--</span>
+      <span id="last-updated" class="text-gray-600 text-xs">—</span>
+      <span id="spinner" class="text-gray-600 text-xs hidden">↻</span>
+      <div id="db-dot" class="w-2 h-2 rounded-full bg-gray-700" title="DB connection"></div>
+    </div>
+  </header>
+
+  <main class="p-6 space-y-5 max-w-7xl mx-auto">
+
+    <!-- ── Row 1: Status + PnL ───────────────────────────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+      <!-- Bot Status -->
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600 mb-4">Bot Status</h2>
+        <dl class="space-y-3">
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Mode</dt>
+            <dd id="st-mode" class="text-xs font-bold text-gray-300">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Strategy</dt>
+            <dd id="st-strategy" class="text-xs text-gray-300">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Last Candle</dt>
+            <dd id="st-candle" class="text-xs text-gray-400">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Last Action</dt>
+            <dd id="st-action" class="text-xs font-bold">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Starting Balance</dt>
+            <dd id="st-balance" class="text-xs text-gray-400">—</dd>
+          </div>
+          <div class="flex justify-between items-center border-t border-gray-800 pt-3">
+            <dt class="text-xs text-gray-600">Database</dt>
+            <dd id="st-db" class="text-xs text-gray-600">—</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- PnL Summary -->
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600 mb-4">PnL Summary</h2>
+        <div class="mb-5">
+          <div id="pnl-total" class="text-3xl font-bold pnl-zero">—</div>
+          <div class="text-xs text-gray-600 mt-1">Total PnL · closed trades only</div>
+        </div>
+        <dl class="space-y-3">
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Win Rate</dt>
+            <dd id="pnl-winrate" class="text-xs text-gray-300">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Closed Trades</dt>
+            <dd id="pnl-trades" class="text-xs text-gray-300">—</dd>
+          </div>
+          <div class="flex justify-between items-center">
+            <dt class="text-xs text-gray-500">Avg PnL / Trade</dt>
+            <dd id="pnl-avg" class="text-xs text-gray-300">—</dd>
+          </div>
+        </dl>
+      </div>
+
+    </div>
+
+    <!-- ── Row 2: Trades ─────────────────────────────────────── -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+      <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600 mb-4">Recent Trades</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-600">
+              <th class="text-left pb-2 pr-4 font-medium">Time (UTC)</th>
+              <th class="text-left pb-2 pr-4 font-medium">Phase</th>
+              <th class="text-left pb-2 pr-4 font-medium">Side</th>
+              <th class="text-right pb-2 pr-4 font-medium">Entry</th>
+              <th class="text-right pb-2 pr-4 font-medium">Exit</th>
+              <th class="text-right pb-2 pr-4 font-medium">TP</th>
+              <th class="text-right pb-2 font-medium">PnL</th>
+            </tr>
+          </thead>
+          <tbody id="trades-tbody">
+            <tr><td colspan="7" class="py-8 text-center text-gray-700">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Row 3: Events ─────────────────────────────────────── -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600">Runtime Events</h2>
+        <div class="flex gap-1.5">
+          <button onclick="filterEvents(null)"      id="btn-all"  class="filter-btn active-btn">ALL</button>
+          <button onclick="filterEvents('INFO')"    id="btn-info" class="filter-btn">INFO</button>
+          <button onclick="filterEvents('WARNING')" id="btn-warn" class="filter-btn">WARN</button>
+          <button onclick="filterEvents('ERROR')"   id="btn-err"  class="filter-btn">ERR</button>
+        </div>
+      </div>
+      <div id="events-list" class="space-y-1 max-h-80 overflow-y-auto pr-1">
+        <div class="text-center text-gray-700 text-xs py-6">Loading…</div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="text-center text-gray-800 text-xs pb-6">
+    Sentinel · read-only view · refreshes every 15 s
+  </footer>
+
+  <style>
+    .filter-btn {
+      padding: 2px 8px; border-radius: 4px; font-size: 11px;
+      background: #1f2937; color: #6b7280; cursor: pointer;
+    }
+    .filter-btn:hover { background: #374151; color: #d1d5db; }
+    .active-btn { background: #374151 !important; color: #e5e7eb !important; }
+  </style>
+
+  <script>
+    const API = '/api';
+    let currentLevel = null;
+
+    // ── helpers ──────────────────────────────────────────────
+
+    function fmtUtc(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} `
+             + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+      } catch { return iso; }
+    }
+
+    function pnlCls(v) {
+      const n = parseFloat(v);
+      return isNaN(n) ? 'pnl-zero' : n > 0 ? 'pnl-pos' : n < 0 ? 'pnl-neg' : 'pnl-zero';
+    }
+
+    function pnlFmt(v) {
+      if (v === null || v === undefined || v === '') return '—';
+      const n = parseFloat(v);
+      if (isNaN(n)) return v;
+      return (n >= 0 ? '+' : '') + n.toFixed(4);
+    }
+
+    function setLoading(on) {
+      const el = document.getElementById('spinner');
+      if (on) { el.classList.remove('hidden'); el.classList.add('spinning'); }
+      else { el.classList.add('hidden'); el.classList.remove('spinning'); }
+    }
+
+    // ── fetchers ─────────────────────────────────────────────
+
+    async function fetchStatus() {
+      const r = await fetch(`${API}/status`);
+      const d = await r.json();
+
+      const isDry = d.dry_run_mode;
+      const badge = document.getElementById('mode-badge');
+      badge.textContent = isDry ? 'DRY RUN' : 'LIVE';
+      badge.className = `px-2 py-0.5 rounded text-xs font-bold tracking-wide `
+        + (isDry ? 'bg-yellow-950 text-yellow-400 border border-yellow-800'
+                 : 'bg-red-950 text-red-400 border border-red-800');
+
+      document.getElementById('db-dot').className = 'w-2 h-2 rounded-full '
+        + (d.db_exists ? 'bg-green-500' : 'bg-gray-700');
+
+      document.getElementById('st-mode').textContent = isDry ? 'Dry Run (safe)' : '⚡ LIVE';
+      document.getElementById('st-mode').className = 'text-xs font-bold '
+        + (isDry ? 'text-yellow-400' : 'text-red-400');
+
+      document.getElementById('st-strategy').textContent = d.strategy_mode || '—';
+      document.getElementById('st-candle').textContent = fmtUtc(d.last_processed_candle_time);
+
+      const side = d.last_action_side;
+      const actionEl = document.getElementById('st-action');
+      if (side) {
+        actionEl.textContent = side;
+        actionEl.className = 'text-xs font-bold ' + (side === 'Buy' ? 'text-green-400' : 'text-red-400');
+      } else {
+        actionEl.textContent = '—';
+        actionEl.className = 'text-xs text-gray-600';
+      }
+
+      document.getElementById('st-balance').textContent =
+        d.starting_balance ? d.starting_balance + ' USDT' : '—';
+
+      const dbEl = document.getElementById('st-db');
+      dbEl.textContent = d.db_exists ? '● connected' : '○ not found';
+      dbEl.className = 'text-xs ' + (d.db_exists ? 'text-green-700' : 'text-gray-700');
+    }
+
+    async function fetchPnL() {
+      const r = await fetch(`${API}/pnl`);
+      const d = await r.json();
+
+      const totalN = parseFloat(d.total_pnl);
+      const totalEl = document.getElementById('pnl-total');
+      totalEl.textContent = (isNaN(totalN) ? '0.000000' : pnlFmt(d.total_pnl)) + ' USDT';
+      totalEl.className = 'text-3xl font-bold ' + pnlCls(d.total_pnl);
+
+      const hasData = d.total_closed_trades > 0;
+      document.getElementById('pnl-winrate').textContent =
+        hasData ? (d.win_rate * 100).toFixed(1) + '%' : '—';
+      document.getElementById('pnl-trades').textContent =
+        hasData ? `${d.total_closed_trades}  (${d.winning_trades}W / ${d.losing_trades}L)` : '0';
+      document.getElementById('pnl-avg').textContent =
+        hasData ? pnlFmt(d.avg_pnl) + ' USDT' : '—';
+    }
+
+    async function fetchTrades() {
+      const r = await fetch(`${API}/trades?limit=50`);
+      const trades = await r.json();
+      const tbody = document.getElementById('trades-tbody');
+
+      if (!trades.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-700">No trades recorded yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = trades.map(t => {
+        const phaseCls = t.trade_phase === 'closed' ? 'badge-closed' : 'badge-opened';
+        const sideCls  = t.side === 'Buy' ? 'text-green-400' : t.side === 'Sell' ? 'text-red-400' : 'text-gray-500';
+        const pnlStr   = pnlFmt(t.pnl);
+        const pnlStyle = t.pnl ? pnlCls(t.pnl) : 'text-gray-600';
+        return `
+          <tr class="border-b border-gray-800/40 hover:bg-gray-800/20 transition-colors">
+            <td class="py-2 pr-4 text-gray-500 whitespace-nowrap">${fmtUtc(t.recorded_at)}</td>
+            <td class="py-2 pr-4"><span class="${phaseCls} px-1.5 py-0.5 rounded">${t.trade_phase}</span></td>
+            <td class="py-2 pr-4 font-bold ${sideCls}">${t.side || '—'}</td>
+            <td class="py-2 pr-4 text-right text-gray-400">${t.entry_price || '—'}</td>
+            <td class="py-2 pr-4 text-right text-gray-400">${t.exit_price  || '—'}</td>
+            <td class="py-2 pr-4 text-right text-gray-600">${t.take_profit || '—'}</td>
+            <td class="py-2 text-right font-bold ${pnlStyle}">${pnlStr}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function fetchEvents(level) {
+      const url = level
+        ? `${API}/events?limit=60&level=${encodeURIComponent(level)}`
+        : `${API}/events?limit=60`;
+      const r = await fetch(url);
+      const events = await r.json();
+      const container = document.getElementById('events-list');
+
+      if (!events.length) {
+        container.innerHTML = '<div class="text-center text-gray-700 text-xs py-6">No events recorded yet.</div>';
+        return;
+      }
+
+      container.innerHTML = events.map(e => {
+        const lvl = (e.level || '').toUpperCase();
+        const badgeCls = lvl === 'ERROR' ? 'badge-error' : (lvl === 'WARNING' || lvl === 'WARN') ? 'badge-warn' : 'badge-info';
+        return `
+          <div class="flex items-start gap-3 py-1 px-2 rounded hover:bg-gray-800/30 transition-colors">
+            <span class="${badgeCls} px-1 py-0.5 rounded text-xs font-bold min-w-[34px] text-center">${lvl.slice(0,4)}</span>
+            <span class="text-gray-600 whitespace-nowrap">${fmtUtc(e.recorded_at)}</span>
+            <span class="text-gray-400 font-bold whitespace-nowrap">${e.event_type}</span>
+            <span class="text-gray-500 truncate">${e.message}</span>
+          </div>`;
+      }).join('');
+    }
+
+    // ── filter buttons ────────────────────────────────────────
+
+    function filterEvents(level) {
+      currentLevel = level;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active-btn'));
+      const map = { null: 'btn-all', INFO: 'btn-info', WARNING: 'btn-warn', ERROR: 'btn-err' };
+      const key = level === null ? 'null' : level;
+      const btnId = map[key] || 'btn-all';
+      document.getElementById(btnId).classList.add('active-btn');
+      fetchEvents(level);
+    }
+
+    // ── main refresh loop ─────────────────────────────────────
+
+    async function refreshAll() {
+      setLoading(true);
+      try {
+        await Promise.all([
+          fetchStatus(),
+          fetchPnL(),
+          fetchTrades(),
+          fetchEvents(currentLevel),
+        ]);
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        document.getElementById('last-updated').textContent =
+          `updated ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
+      } catch (err) {
+        console.error('Refresh failed:', err);
+        document.getElementById('last-updated').textContent = 'update failed — retrying';
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 15000);
+  </script>
+
+</body>
+</html>
