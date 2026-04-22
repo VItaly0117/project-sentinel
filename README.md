@@ -119,6 +119,62 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
   - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
 
+## Docker / multi-bot local stack
+
+### Prerequisites
+
+1. Copy `.env.example` to `.env` and fill in your Bybit demo API key and secret.
+2. Both bot services default to `DRY_RUN_MODE=true` — safe to start immediately.
+
+### Launch the full stack
+
+```bash
+docker compose up --build
+```
+
+This starts three containers:
+| Service | Description |
+|---------|-------------|
+| `postgres` | PostgreSQL 16 (local dev credentials; no real secrets) |
+| `btc-bot` | Sentinel runtime for `BTCUSDT`, schema `btcusdt` |
+| `eth-bot` | Sentinel runtime for `ETHUSDT`, schema `ethusdt` |
+
+### Start only PostgreSQL (manual inspection)
+
+```bash
+docker compose up postgres
+```
+
+### Inspect PostgreSQL runtime state
+
+```bash
+# Connect to the btc-bot schema
+psql postgresql://sentinel:sentinel_dev@localhost:5432/sentinel \
+  -c "SET search_path TO btcusdt; SELECT key, value_text, updated_at FROM runtime_state ORDER BY key;"
+
+# Connect to the eth-bot schema
+psql postgresql://sentinel:sentinel_dev@localhost:5432/sentinel \
+  -c "SET search_path TO ethusdt; SELECT key, value_text, updated_at FROM runtime_state ORDER BY key;"
+```
+
+### PostgreSQL environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | _(unset)_ | Full PostgreSQL DSN. If set, PostgreSQL is used instead of SQLite. |
+| `DATABASE_SCHEMA` | `public` | PostgreSQL schema for this bot instance. Use a distinct name per bot to avoid `runtime_state` key collisions. |
+
+### Backward compatibility
+
+- When `DATABASE_URL` is **not** set, the runtime uses SQLite exactly as before.
+- `RUNTIME_DB_PATH` is still read by preflight; when `DATABASE_URL` is set the SQLite path is reported but not used for persistent storage.
+
+### Tear down
+
+```bash
+docker compose down -v   # -v removes the postgres_data volume
+```
+
 ## Tests
 - Runtime:
   - `pytest -q tests/test_runtime_mvp.py`

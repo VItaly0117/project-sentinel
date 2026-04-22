@@ -65,10 +65,11 @@ class TelegramNotifier:
             return
         self._post_message(self._config.telegram_chat_id, message)
 
-    def send_startup(self, exchange_mode: str, symbol: str, dry_run_mode: bool) -> None:
+    def send_startup(self, bot_id: str, exchange_mode: str, symbol: str, dry_run_mode: bool) -> None:
         execution_mode = "DRY\\_RUN" if dry_run_mode else "LIVE\\_ORDERS"
         self.send_message(
             f"🟢 *Sentinel runtime started*\n"
+            f"Bot: `{bot_id}`\n"
             f"Mode: `{exchange_mode}`\n"
             f"Execution: `{execution_mode}`\n"
             f"Symbol: `{symbol}`\n"
@@ -201,6 +202,7 @@ class TelegramNotifier:
         self._reply(
             chat_id,
             f"📊 *Sentinel Status*\n"
+            f"Bot: `{state.get('bot_id', 'unknown')}`\n"
             f"Mode: `{state.get('execution_mode', 'unknown')}`\n"
             f"Symbol: `{state.get('symbol', 'unknown')}`\n\n"
             f"💰 *Balance*\n"

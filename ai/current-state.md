@@ -54,8 +54,21 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
+## Docker + PostgreSQL (2026-04-22)
+- `requirements.txt` created with all runtime/training/DB deps.
+- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
+- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+- `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
+- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
+- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
+- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
+- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- **Launch command:** `docker compose up --build`
+
 ## Current debt and risks
-- There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
+- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
 - Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
