@@ -200,5 +200,21 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 - `ai/session-notes/`: compact handoff notes by date/session
 - `ai/patch_review.md`: accumulated review findings to convert into safe patches
 
+## Claude Code Handoff
+- Project Claude instructions:
+  - `CLAUDE.md`
+- Shared Claude settings:
+  - `.claude/settings.json`
+- Hackathon handoff:
+  - `docs/claude-code-handoff.md`
+  - `docs/hackathon-roadmap.md`
+  - `docs/hackathon-demo-checklist.md`
+
+## Obsidian Memory
+- Open `obsidian/` as a vault.
+- Start from:
+  - `obsidian/00_home.md`
+- Use the linked notes as a low-token project graph for future sessions and teammate handoff.
+
 ## Next recommended work
 - Run the new ingestion utility on one real Binance archive and one saved Bybit response, then compare separate training artifacts without mixing venues.

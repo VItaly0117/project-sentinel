@@ -42,6 +42,13 @@
 - Bybit named-column parsing now fails fast on ambiguous alias conflicts instead of silently picking one column.
 - The repository now also includes a tiny local inspect helper at `python3 -m sentinel_training.ingest.inspect` for reading ingest metadata sidecars and optionally verifying that the normalized CSV still matches the recorded row count, columns, and min/max timestamps.
 - `README.md` and `docs/training-data-sources.md` now contain concrete first-run walkthroughs for one Binance archive flow and one saved Bybit response flow, including expected output paths and metadata inspection commands.
+- The repository is now also prepared for a Claude Code handoff:
+  - root `CLAUDE.md`
+  - `.claude/settings.json`
+  - `docs/claude-code-handoff.md`
+  - `docs/hackathon-roadmap.md`
+  - `docs/hackathon-demo-checklist.md`
+- The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
 ## Current debt and risks
 - There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
@@ -57,10 +64,11 @@
 - Training data quality still depends on the operator choosing the correct source file type, symbol, interval, and venue-specific candle semantics.
 - Ingest timestamp support is intentionally narrow for now: saved source files must provide Unix milliseconds for candle open times.
 - The new inspect helper validates metadata against the CSV, but it is still an operator-side check, not a broader artifact registry or dataset catalog.
+- Claude Code handoff is prepared at the documentation/settings level, but the actual 5-day implementation sprint still depends on disciplined task slicing and daily memory updates.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
 - Some operational protections now exist in code, but persistence, orchestration, and centralized control are still absent.
 
 ## Next step
-- Run `python3 sentineltest.py --preflight` against the real `.env`, then perform the first documented dry-run smoke launch and inspect runtime SQLite/events before moving on to Docker or broader deployment work.
+- Start the hackathon execution flow from `docs/hackathon-roadmap.md`: first confirm runtime preflight + dry-run on the real `.env`, then generate the first real Binance dataset and baseline training artifact.

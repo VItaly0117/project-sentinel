@@ -12,6 +12,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Training automated tests: 78%
 - Training data-source definition and onboarding clarity: 88%
 - Training data ingestion and normalization MVP: 78%
+- Claude Code and Obsidian handoff readiness: 90%
 
 ## Target-system progress
 - Single-bot research/runtime MVP versus target platform: 30%
@@ -27,6 +28,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Focused pytest coverage for runtime, training, and ingest normalization contracts, including timestamp validation, embedded header stripping, ZIP content hashing, and alias-conflict checks.
 - A compact data-source note plus a local-first ingest CLI for Binance and Bybit raw candle files.
 - A tiny metadata inspection helper and copy-paste local walkthroughs for first Binance and Bybit dataset-generation runs.
+- Claude Code project instructions, project settings, hackathon roadmap, demo checklist, and an Obsidian-ready memory graph starter.
 
 ## What is still missing
 - Platform infrastructure and deployment layers.
@@ -37,8 +39,9 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Broader source-format coverage beyond the currently supported Binance/Bybit MVP shapes.
 - A full operator playbook that goes from normalized data to a documented first baseline training run.
 - Exchange-credential verification against a real Bybit endpoint before launch.
+- The actual 5-day execution backlog still needs to be burned down against real data, real `.env`, and real demo artifacts.
 
 ## Next checkpoint
-- Run the ingest CLI against real Binance and Bybit source files using the new walkthrough, then capture one reproducible baseline training run from the Binance dataset.
-- Run the runtime preflight and first dry-run smoke launch against a real local `.env`, then capture the exact operator outputs in docs if they reveal confusion.
+- Execute Day 1 of `docs/hackathon-roadmap.md`: real preflight, real dry-run, and one real ingest path.
+- Then capture one reproducible Binance baseline training run and freeze the first demo evidence pack.
 - Optionally split the large runtime test file into smaller modules once the current stabilization wave slows down.
