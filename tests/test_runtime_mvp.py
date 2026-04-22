@@ -99,6 +99,7 @@ RUNTIME_ENV_KEYS = [
     "POLL_INTERVAL_SECONDS",
     "LOG_LEVEL",
     "RUNTIME_DB_PATH",
+    "BOT_ID",
     "MAX_DAILY_LOSS_PCT",
     "MAX_DRAWDOWN_PCT",
     "MIN_BALANCE_RESERVE_PCT",
@@ -229,8 +230,8 @@ class FakeNotifier:
         self.runtime_errors: list[str] = []
         self.startup_calls: list[tuple[str, str, bool]] = []
 
-    def send_startup(self, exchange_mode: str, symbol: str, dry_run_mode: bool) -> None:
-        self.startup_calls.append((exchange_mode, symbol, dry_run_mode))
+    def send_startup(self, bot_id: str, exchange_mode: str, symbol: str, dry_run_mode: bool) -> None:
+        self.startup_calls.append((bot_id, exchange_mode, symbol, dry_run_mode))
 
     def send_trade_opened(
         self,
@@ -876,7 +877,7 @@ def test_simulate_market_order_uses_unique_high_precision_ids(
 
 
 def test_sqlite_runtime_storage_persists_state_and_entities(tmp_path: Path) -> None:
-    storage = SQLiteRuntimeStorage(tmp_path / "runtime.db")
+    storage = SQLiteRuntimeStorage(tmp_path / "runtime.db", "BTCUSDT")
     candle_time = pd.Timestamp("2026-04-06T12:05:00Z").to_pydatetime()
     signal = SignalDecision(
         candle_open_time=candle_time,
@@ -944,7 +945,7 @@ def test_sqlite_runtime_storage_persists_state_and_entities(tmp_path: Path) -> N
 
 
 def test_sqlite_runtime_storage_normalizes_naive_datetimes_to_utc(tmp_path: Path) -> None:
-    storage = SQLiteRuntimeStorage(tmp_path / "runtime.db")
+    storage = SQLiteRuntimeStorage(tmp_path / "runtime.db", "BTCUSDT")
     with sqlite3.connect(storage.db_path) as connection:
         connection.execute(
             """
@@ -955,7 +956,7 @@ def test_sqlite_runtime_storage_normalizes_naive_datetimes_to_utc(tmp_path: Path
                 updated_at=excluded.updated_at
             """,
             (
-                "last_processed_candle_time",
+                "BTCUSDT:last_processed_candle_time",
                 "2026-04-06T12:05:00",
                 "2026-04-06T12:05:01+00:00",
             ),
@@ -971,6 +972,45 @@ def test_sqlite_runtime_storage_normalizes_naive_datetimes_to_utc(tmp_path: Path
         5,
         tzinfo=timezone.utc,
     )
+
+
+def test_sqlite_two_bot_ids_are_isolated_in_shared_db(tmp_path: Path) -> None:
+    db_path = tmp_path / "shared.db"
+    storage_a = SQLiteRuntimeStorage(db_path, "BTCUSDT")
+    storage_b = SQLiteRuntimeStorage(db_path, "ETHUSDT")
+
+    candle_a = pd.Timestamp("2026-04-06T12:05:00Z").to_pydatetime()
+    candle_b = pd.Timestamp("2026-04-06T12:10:00Z").to_pydatetime()
+
+    storage_a.save_runtime_state(candle_a, "order-a", Decimal("100"), candle_a, "Buy", "order-a")
+    storage_b.save_runtime_state(candle_b, "order-b", Decimal("200"), candle_b, "Sell", "order-b")
+
+    state_a = storage_a.load_runtime_state()
+    state_b = storage_b.load_runtime_state()
+
+    assert state_a.last_processed_candle_time == candle_a
+    assert state_a.last_action_side == "Buy"
+    assert state_a.starting_balance == Decimal("100")
+
+    assert state_b.last_processed_candle_time == candle_b
+    assert state_b.last_action_side == "Sell"
+    assert state_b.starting_balance == Decimal("200")
+
+
+def test_load_app_config_bot_id_defaults_to_symbol(tmp_path: Path) -> None:
+    env_path = _write_env_file(tmp_path, BYBIT_SYMBOL="ETHUSDT")
+
+    config = load_app_config(env_path)
+
+    assert config.storage.bot_id == "ETHUSDT"
+
+
+def test_load_app_config_bot_id_can_be_set_explicitly(tmp_path: Path) -> None:
+    env_path = _write_env_file(tmp_path, BOT_ID="sentinel-01")
+
+    config = load_app_config(env_path)
+
+    assert config.storage.bot_id == "sentinel-01"
 
 
 def test_get_bot_status_returns_expected_shape_after_bootstrap(
@@ -991,6 +1031,7 @@ def test_get_bot_status_returns_expected_shape_after_bootstrap(
     status = runtime._get_bot_status()
 
     assert set(status.keys()) == {
+        "bot_id",
         "execution_mode",
         "symbol",
         "equity",
@@ -1028,7 +1069,7 @@ def _make_runtime(
     monkeypatch.setattr(runtime_module, "ModelSignalEngine", lambda **kwargs: fake_signal_engine)
     monkeypatch.setattr(runtime_module, "RiskManager", lambda config: fake_risk_manager)
     monkeypatch.setattr(runtime_module, "TelegramNotifier", lambda config: fake_notifier)
-    monkeypatch.setattr(runtime_module, "SQLiteRuntimeStorage", lambda db_path: fake_storage)
+    monkeypatch.setattr(runtime_module, "SQLiteRuntimeStorage", lambda db_path, bot_id: fake_storage)
 
     runtime = runtime_module.TradingRuntime(_app_config(tmp_path, dry_run_mode=dry_run_mode))
     return runtime, fake_exchange, fake_signal_engine, fake_risk_manager, fake_notifier, fake_storage
@@ -1077,6 +1118,7 @@ def _app_config(tmp_path: Path, dry_run_mode: bool = False) -> AppConfig:
         ),
         storage=StorageConfig(
             db_path=tmp_path / "runtime.db",
+            bot_id="BTCUSDT",
         ),
         circuit_breaker=CircuitBreakerConfig(
             api_error_threshold=5,

@@ -3,8 +3,8 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 82%
-- Runtime persistence and restart safety: 70%
+- Trading runtime safety and module split: 87%
+- Runtime persistence and restart safety: 78%
 - Operator smoke-run clarity: 85%
 - Runtime automated tests: 80%
 - Strategy mode options (xgb + deterministic rule-based): 60%

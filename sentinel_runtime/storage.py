@@ -11,8 +11,9 @@ from .models import ClosedTradeReport, PlacedOrder, RiskSnapshot, RuntimeState, 
 
 
 class SQLiteRuntimeStorage:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, bot_id: str) -> None:
         self._db_path = db_path
+        self._bot_id = bot_id
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -21,12 +22,14 @@ class SQLiteRuntimeStorage:
         return self._db_path
 
     def load_runtime_state(self) -> RuntimeState:
+        prefix = f"{self._bot_id}:"
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT key, value_text FROM runtime_state"
+                "SELECT key, value_text FROM runtime_state WHERE key LIKE ?",
+                (f"{prefix}%",),
             ).fetchall()
 
-        state_map = {row["key"]: row["value_text"] for row in rows}
+        state_map = {row["key"][len(prefix):]: row["value_text"] for row in rows}
         last_processed_candle_time = self._parse_datetime(
             state_map.get("last_processed_candle_time")
         )
@@ -53,14 +56,15 @@ class SQLiteRuntimeStorage:
         last_action_side: str | None,
         last_action_order_id: str | None,
     ) -> None:
+        prefix = f"{self._bot_id}:"
         timestamp = self._utc_now()
         entries = [
-            ("last_processed_candle_time", self._format_datetime(last_processed_candle_time), timestamp),
-            ("last_reported_closed_trade_id", last_reported_closed_trade_id, timestamp),
-            ("starting_balance", self._format_decimal(starting_balance), timestamp),
-            ("last_action_candle_time", self._format_datetime(last_action_candle_time), timestamp),
-            ("last_action_side", last_action_side, timestamp),
-            ("last_action_order_id", last_action_order_id, timestamp),
+            (f"{prefix}last_processed_candle_time", self._format_datetime(last_processed_candle_time), timestamp),
+            (f"{prefix}last_reported_closed_trade_id", last_reported_closed_trade_id, timestamp),
+            (f"{prefix}starting_balance", self._format_decimal(starting_balance), timestamp),
+            (f"{prefix}last_action_candle_time", self._format_datetime(last_action_candle_time), timestamp),
+            (f"{prefix}last_action_side", last_action_side, timestamp),
+            (f"{prefix}last_action_order_id", last_action_order_id, timestamp),
         ]
         with self._connect() as connection:
             connection.executemany(
@@ -91,9 +95,10 @@ class SQLiteRuntimeStorage:
                     market_price,
                     action,
                     decision_outcome,
-                    detail_text
+                    detail_text,
+                    bot_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
@@ -104,6 +109,7 @@ class SQLiteRuntimeStorage:
                     signal.action,
                     decision_outcome,
                     detail_text,
+                    self._bot_id,
                 ),
             )
 
@@ -122,9 +128,10 @@ class SQLiteRuntimeStorage:
                     take_profit,
                     stop_loss,
                     pnl,
-                    signal_candle_open_time
+                    signal_candle_open_time,
+                    bot_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
@@ -138,6 +145,7 @@ class SQLiteRuntimeStorage:
                     self._format_decimal(order.stop_loss),
                     None,
                     self._format_datetime(signal.candle_open_time),
+                    self._bot_id,
                 ),
             )
 
@@ -156,9 +164,10 @@ class SQLiteRuntimeStorage:
                     take_profit,
                     stop_loss,
                     pnl,
-                    signal_candle_open_time
+                    signal_candle_open_time,
+                    bot_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
@@ -172,6 +181,7 @@ class SQLiteRuntimeStorage:
                     None,
                     self._format_decimal(trade.pnl),
                     None,
+                    self._bot_id,
                 ),
             )
 
@@ -196,9 +206,10 @@ class SQLiteRuntimeStorage:
                     max_daily_loss_amount,
                     max_drawdown_amount,
                     allowed,
-                    reason
+                    reason,
+                    bot_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
@@ -213,6 +224,7 @@ class SQLiteRuntimeStorage:
                     self._format_decimal(snapshot.max_drawdown_amount),
                     1 if allowed else 0,
                     reason,
+                    self._bot_id,
                 ),
             )
 
@@ -226,8 +238,8 @@ class SQLiteRuntimeStorage:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO runtime_events(recorded_at, level, event_type, message, context_json)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO runtime_events(recorded_at, level, event_type, message, context_json, bot_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
@@ -235,6 +247,7 @@ class SQLiteRuntimeStorage:
                     event_type,
                     message,
                     self._format_context(context),
+                    self._bot_id,
                 ),
             )
 
@@ -247,14 +260,15 @@ class SQLiteRuntimeStorage:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO error_events(recorded_at, error_type, message, context_json)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO error_events(recorded_at, error_type, message, context_json, bot_id)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     self._utc_now(),
                     error_type,
                     message,
                     self._format_context(context),
+                    self._bot_id,
                 ),
             )
 
@@ -279,7 +293,8 @@ class SQLiteRuntimeStorage:
                     market_price TEXT NOT NULL,
                     action TEXT,
                     decision_outcome TEXT NOT NULL,
-                    detail_text TEXT
+                    detail_text TEXT,
+                    bot_id TEXT NOT NULL DEFAULT 'default'
                 );
 
                 CREATE TABLE IF NOT EXISTS trades (
@@ -294,7 +309,8 @@ class SQLiteRuntimeStorage:
                     take_profit TEXT,
                     stop_loss TEXT,
                     pnl TEXT,
-                    signal_candle_open_time TEXT
+                    signal_candle_open_time TEXT,
+                    bot_id TEXT NOT NULL DEFAULT 'default'
                 );
 
                 CREATE TABLE IF NOT EXISTS risk_snapshots (
@@ -310,7 +326,8 @@ class SQLiteRuntimeStorage:
                     max_daily_loss_amount TEXT NOT NULL,
                     max_drawdown_amount TEXT NOT NULL,
                     allowed INTEGER NOT NULL,
-                    reason TEXT
+                    reason TEXT,
+                    bot_id TEXT NOT NULL DEFAULT 'default'
                 );
 
                 CREATE TABLE IF NOT EXISTS runtime_events (
@@ -319,7 +336,8 @@ class SQLiteRuntimeStorage:
                     level TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     message TEXT NOT NULL,
-                    context_json TEXT
+                    context_json TEXT,
+                    bot_id TEXT NOT NULL DEFAULT 'default'
                 );
 
                 CREATE TABLE IF NOT EXISTS error_events (
@@ -327,17 +345,28 @@ class SQLiteRuntimeStorage:
                     recorded_at TEXT NOT NULL,
                     error_type TEXT NOT NULL,
                     message TEXT NOT NULL,
-                    context_json TEXT
+                    context_json TEXT,
+                    bot_id TEXT NOT NULL DEFAULT 'default'
                 );
 
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_signals_unique_decision
-                ON signals(candle_open_time, ifnull(action, ''), decision_outcome);
+                ON signals(candle_open_time, ifnull(action, ''), decision_outcome, bot_id);
 
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_unique_phase_order
                 ON trades(trade_phase, order_id)
                 WHERE order_id IS NOT NULL;
                 """
             )
+        with self._connect() as connection:
+            self._migrate_add_bot_id(connection)
+
+    def _migrate_add_bot_id(self, connection: sqlite3.Connection) -> None:
+        for table in ("signals", "trades", "risk_snapshots", "runtime_events", "error_events"):
+            existing_cols = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if "bot_id" not in existing_cols:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default'"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._db_path)
