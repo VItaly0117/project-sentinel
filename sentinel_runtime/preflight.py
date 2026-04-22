@@ -36,7 +36,7 @@ def run_preflight(env_path: Path | None = None) -> PreflightReport:
             detail="Required exchange credentials and runtime env variables are present.",
         ),
         _validate_model_path(config),
-        _validate_sqlite_path(config),
+        _validate_storage(config),
         _validate_exchange_mode(config),
     ]
     return PreflightReport(config=config, checks=tuple(checks))
@@ -52,7 +52,8 @@ def log_preflight_report(report: PreflightReport) -> None:
         report.config.runtime.dry_run_mode,
         report.config.exchange.symbol,
     )
-    logger.info("Preflight paths | model_path=%s sqlite_db_path=%s", report.config.strategy.model_path, report.config.storage.db_path)
+    storage_info = report.config.storage.database_url or str(report.config.storage.db_path)
+    logger.info("Preflight paths | model_path=%s storage=%s", report.config.strategy.model_path, storage_info)
     for check in report.checks:
         logger.info("Preflight check | %s | %s", check.name, check.detail)
 
@@ -93,6 +94,15 @@ def _validate_model_path(config: AppConfig) -> PreflightCheck:
     except OSError as exc:
         raise PreflightError(f"MODEL_PATH is not readable: {model_path}.") from exc
     return PreflightCheck(name="model_path", detail=f"Readable model file found at {model_path}.")
+
+
+def _validate_storage(config: AppConfig) -> PreflightCheck:
+    if config.storage.database_url:
+        return PreflightCheck(
+            name="storage",
+            detail=f"PostgreSQL storage selected (DATABASE_URL is set, schema={config.storage.database_schema}).",
+        )
+    return _validate_sqlite_path(config)
 
 
 def _validate_sqlite_path(config: AppConfig) -> PreflightCheck:

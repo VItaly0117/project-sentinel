@@ -54,8 +54,21 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
+## Docker + PostgreSQL (2026-04-22)
+- `requirements.txt` created with all runtime/training/DB deps.
+- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
+- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+- `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
+- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
+- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
+- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
+- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- **Launch command:** `docker compose up --build`
+
 ## Current debt and risks
-- There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
+- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
 - Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
@@ -98,6 +111,15 @@
 - When the new mode is active, `MODEL_PATH` is still parsed but the XGBoost artifact is not loaded into memory.
 - Dynamic ATR-based TP/SL is intentionally deferred — `TP_PCT` / `SL_PCT` still drive exits. Code structure makes that follow-up patch small.
 - New test file `tests/test_zscore_strategy.py` covers math helpers, insufficient-history short-circuit, long/short signal triggers, ATR-band gate, volume-z-score gate, and config parsing (default, explicit switch, invalid value).
+
+## Instance identity (2026-04-22)
+- `BOT_ID` env var added; defaults to `BYBIT_SYMBOL` (e.g., `BTCUSDT`).
+- `runtime_state` keys are now scoped `{bot_id}:{key}` — two bots sharing the same DB file no longer clobber each other's state markers.
+- All event tables (signals, trades, risk_snapshots, runtime_events, error_events) now carry a `bot_id` column for record attribution.
+- Logger is now `TradingRuntime[BTCUSDT]` style — no more ambiguous logs when two instances run.
+- Existing DBs are migrated automatically on first boot via `ALTER TABLE ADD COLUMN DEFAULT 'default'` migration helper `_migrate_add_bot_id`.
+- Single-bot operator path is unchanged — no `.env` change needed; `BOT_ID` defaults to the symbol.
+- All 73 tests pass; new tests verify DB isolation and config defaults.
 
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.

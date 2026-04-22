@@ -25,7 +25,7 @@ BybitExchangeClient = None
 TelegramNotifier = None
 RiskManager = None
 ModelSignalEngine = None
-SQLiteRuntimeStorage = None
+create_storage = None
 
 
 class TradingRuntime:
@@ -34,7 +34,7 @@ class TradingRuntime:
         notifier_cls = TelegramNotifier
         risk_manager_cls = RiskManager
         signal_engine_cls = ModelSignalEngine
-        storage_cls = SQLiteRuntimeStorage
+        storage_factory = create_storage
         if exchange_client_cls is None:
             from .exchange import BybitExchangeClient as exchange_client_cls
         if notifier_cls is None:
@@ -43,11 +43,11 @@ class TradingRuntime:
             from .risk import RiskManager as risk_manager_cls
         if signal_engine_cls is None:
             from .signals import ModelSignalEngine as signal_engine_cls
-        if storage_cls is None:
-            from .storage import SQLiteRuntimeStorage as storage_cls
+        if storage_factory is None:
+            from .storage import create_storage as storage_factory
 
         self._config = config
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(f"{self.__class__.__name__}[{config.storage.bot_id}]")
         self._exchange = exchange_client_cls(
             exchange_config=config.exchange,
             strategy_config=config.strategy,
@@ -63,7 +63,7 @@ class TradingRuntime:
                 model_path=config.strategy.model_path,
                 confidence_threshold=config.strategy.confidence_threshold,
             )
-        self._storage = storage_cls(config.storage.db_path)
+        self._storage = storage_factory(config.storage)
         self._last_processed_candle_time: datetime | None = None
         self._last_reported_closed_trade_id: str | None = None
         self._last_action_candle_time: datetime | None = None
@@ -98,6 +98,7 @@ class TradingRuntime:
             event_type="bootstrap_completed",
             message="Runtime bootstrap completed.",
             context={
+                "bot_id": self._config.storage.bot_id,
                 "symbol": self._config.exchange.symbol,
                 "dry_run_mode": self._config.runtime.dry_run_mode,
                 "baseline_balance": str(self._risk_manager.starting_balance),
@@ -128,6 +129,7 @@ class TradingRuntime:
             self._notifier.send_runtime_error(str(exc))
             raise
         self._notifier.send_startup(
+            bot_id=self._config.storage.bot_id,
             exchange_mode=self._config.exchange.environment.value,
             symbol=self._config.exchange.symbol,
             dry_run_mode=self._config.runtime.dry_run_mode,
@@ -512,6 +514,7 @@ class TradingRuntime:
         hours, remainder = divmod(elapsed, 3600)
         minutes = remainder // 60
         return {
+            "bot_id": self._config.storage.bot_id,
             "execution_mode": "dry-run" if self._config.runtime.dry_run_mode else "live-orders",
             "symbol": self._config.exchange.symbol,
             "equity": str(self._dry_run_equity) if self._config.runtime.dry_run_mode else "N/A",

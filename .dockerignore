@@ -1,0 +1,27 @@
+.git
+.env
+.env.*
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Large training data — not needed in the bot image
+data/
+
+# Training artifacts — not needed in the bot image
+artifacts/train_v4/
+
+# SQLite runtime DBs — runtime state lives in PostgreSQL when using compose
+artifacts/runtime/
+
+# Obsidian vault and AI memory — not needed in the image
+obsidian/
+ai/
+
+# Docs and tests — reduce image size; tests are run separately
+docs/
+tests/

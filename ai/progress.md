@@ -3,8 +3,8 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 82%
-- Runtime persistence and restart safety: 70%
+- Trading runtime safety and module split: 87%
+- Runtime persistence and restart safety: 78%
 - Operator smoke-run clarity: 85%
 - Runtime automated tests: 80%
 - Strategy mode options (xgb + deterministic rule-based): 60%
@@ -20,7 +20,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Single-bot research/runtime MVP versus target platform: 30%
 - Multi-bot orchestration and centralized control: 5%
 - Admin panel and operator UI: 0%
-- Shared infra such as DB/Redis/Docker/CI-CD: 10%
+- Shared infra such as DB/Redis/Docker/CI-CD: 40%
 - Analyst and higher-level automation layers: 0%
 
 ## What is already done
