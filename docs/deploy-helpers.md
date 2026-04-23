@@ -32,9 +32,14 @@ All scripts live in `scripts/` and wrap `docker compose` — no additional depen
 - Waits 10 s then prints `docker compose ps`.
 
 ```bash
-# Force image rebuild (e.g. after changing Dockerfile or requirements.txt):
+# Force fresh rebuild without Docker layer cache
+# (e.g. after changing base image or troubleshooting a stale build):
 ./scripts/deploy_local.sh --rebuild
 ```
+
+`--rebuild` runs `docker compose build --no-cache` before start. The default path
+already uses `docker compose up --build -d`, which is fast because Docker caches
+unchanged layers — only use `--rebuild` when you actually need to bypass the cache.
 
 ### Smoke test
 
@@ -106,7 +111,7 @@ cd ~/project-sentinel
 # Skip git pull (already on the desired commit):
 ./scripts/deploy_vps.sh --no-pull
 
-# Force image rebuild after dep changes:
+# Force fresh rebuild without Docker layer cache:
 ./scripts/deploy_vps.sh --rebuild
 ```
 
