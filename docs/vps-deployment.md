@@ -57,6 +57,12 @@ Never commit `.env`. It is in both `.gitignore` and `.dockerignore`.
 
 ## 3. First launch
 
+> **Shortcut:** use the deploy helper instead of running raw compose commands:
+> ```bash
+> ./scripts/deploy_vps.sh
+> ```
+> See `docs/deploy-helpers.md` for the full helper reference.
+
 ```bash
 docker compose up --build -d
 ```
@@ -84,6 +90,8 @@ Expected on a healthy start:
 ---
 
 ## 4. Smoke-test checklist
+
+> **Shortcut:** `./scripts/smoke_check.sh` runs all checks below automatically and exits 1 on failure.
 
 Run these immediately after `docker compose up`:
 
@@ -118,13 +126,19 @@ they are not reachable from the public internet. To demo the dashboard:
 
 ## 6. Rollback checklist
 
+> **Shortcut:** `./scripts/stop_stack.sh` (keep data) or `./scripts/stop_stack.sh --bots-only` (emergency kill-switch).
+
 ### Stop the stack (keep data)
 ```bash
+./scripts/stop_stack.sh
+# or raw:
 docker compose down
 ```
 
 ### Stop and wipe state (including PostgreSQL volume)
 ```bash
+./scripts/stop_stack.sh --wipe   # asks for 'yes' confirmation
+# or raw:
 docker compose down -v
 ```
 
@@ -162,6 +176,9 @@ docker compose up --build -d
   (50 MB per service cap). Adjust in `docker-compose.yml` if needed.
 - PostgreSQL data lives in the `postgres_data` named volume. For backups:
   ```bash
+  ./scripts/backup_db.sh                     # saves to backups/ with timestamp
+  ./scripts/backup_db.sh --out /mnt/backups  # custom path
+  # or raw:
   docker compose exec -T postgres pg_dump -U sentinel sentinel > sentinel-$(date +%F).sql
   ```
 - Runtime events are in the `runtime_events` table per bot schema; the API

@@ -119,6 +119,21 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
   - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
 
+## Deploy helpers
+
+One-command operator scripts for local and VPS bring-up:
+
+| Script | What it does |
+|--------|-------------|
+| `scripts/deploy_local.sh` | Bring up the full stack locally (Arch / any Linux + Docker) |
+| `scripts/deploy_vps.sh` | `git pull` + bring up / update on a VPS |
+| `scripts/smoke_check.sh` | 7-check automated post-deploy health test |
+| `scripts/logs_follow.sh [service]` | Tail service logs |
+| `scripts/stop_stack.sh` | Stop the stack safely (keeps data by default) |
+| `scripts/backup_db.sh` | Dump PostgreSQL state to a timestamped file |
+
+Full reference: `docs/deploy-helpers.md`
+
 ## Docker / multi-bot local stack
 
 For full VPS deployment steps, smoke-test commands, and a rollback
