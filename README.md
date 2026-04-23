@@ -30,12 +30,13 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Single-file HTML dashboard (Tailwind, vanilla JS, 15 s refresh)
   - Per-bot schema isolation (btcusdt/ethusdt schemas in shared PG)
   - Step-by-step VPS deployment guide with smoke-test checklist
-- **Not built yet (deferred post-MVP):**
-  - Live-mode admin panel (write-enabled controls; API is read-only for now)
-  - Multi-host orchestration (Kubernetes / auto-scaling)
-  - GitHub Actions smoke CI (minimal; local pytest + docker-compose validation suffices for MVP)
+- **Pending in feature branches (not yet merged to main):**
+  - GitHub Actions smoke CI
   - Remote credential verification via --remote-check flag
-  - Multi-bot API selector (/api/bots endpoint, ?bot=... query)
+  - Multi-bot API selector (/api/bots endpoint, ?bot=... query param)
+- **Not built yet (deferred post-MVP):**
+  - Live-mode admin panel (write-enabled; API is read-only for MVP)
+  - Multi-host orchestration (Kubernetes / auto-scaling)
   - Redis caching layer
   - Advanced backtesting and slippage modeling
   - Full multi-bot platform architecture from the tech spec

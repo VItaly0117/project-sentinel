@@ -97,13 +97,19 @@ Open `http://localhost:8000/` in a browser.
 - Shows current bot status, last 20 trades, last 20 events, estimated PnL.
 - Auto-refreshes every 15 seconds.
 
-### B.5 Switch which bot the dashboard reads
+### B.5 Switch which bot the dashboard reads (via env var)
 ```bash
 # Restart API to read eth-bot schema instead
 docker compose -e API_DATABASE_SCHEMA=ethusdt up -d api
+
+# Or update .env and restart
+echo "API_DATABASE_SCHEMA=ethusdt" >> .env
+docker compose restart api
 ```
 
-**Path B complete:** Multi-bot demo running, PostgreSQL persisting per-bot, Dashboard showing isolation.
+**Note:** Multi-bot API selector (`/api/bots` endpoint, `?bot=...` query) is pending in a feature branch, not yet merged. For now, use `API_DATABASE_SCHEMA` env var to select which bot's data the dashboard reads.
+
+**Path B complete:** Multi-bot demo running, PostgreSQL persisting per-bot, Dashboard showing per-schema isolation via env var.
 
 ---
 

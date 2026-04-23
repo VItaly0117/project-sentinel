@@ -54,8 +54,8 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
-## Docker + PostgreSQL (2026-04-22)
-- `requirements.txt` created with all runtime/training/DB/API deps (fastapi, uvicorn, psycopg2).
+## Docker + PostgreSQL + API (2026-04-22 to 2026-04-23)
+- `requirements.txt` includes runtime/training/DB/API deps (fastapi, uvicorn, psycopg2).
 - `Dockerfile` — Python 3.12-slim, non-root `sentinel` user, entrypoint dispatcher for `bot` or `api` mode.
 - `docker/entrypoint.sh` — dispatches to runtime (with preflight-gated startup) or FastAPI server.
 - `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` + `eth-bot` + `api` (hardened):
@@ -67,8 +67,14 @@
 - `sentinel_runtime/storage.py` has `PostgreSQLRuntimeStorage` (psycopg2) and `create_storage()` factory.
 - `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
 - Schema isolation: each bot instance writes to its own PostgreSQL schema (btcusdt/ethusdt/custom).
-- `sentinel_runtime/preflight.py` now reports PostgreSQL mode when `DATABASE_URL` is set.
-- API `/api/status` endpoint exposes `storage_backend` (postgres/sqlite), `storage_target`, and `bot_id`.
+- `sentinel_runtime/preflight.py` reports PostgreSQL mode when `DATABASE_URL` is set.
+- API endpoints (read-only):
+  - `/api/health` — liveness probe
+  - `/api/status` — exposes `storage_backend` (postgres/sqlite), `storage_target`, `bot_id`
+  - `/api/trades` — recent closed trades
+  - `/api/events` — runtime events with optional level filter
+  - `/api/pnl` — aggregate PnL summary
+  - `/` — single-file HTML dashboard (Tailwind, vanilla JS)
 - 73 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore + 3 new).
 - **Launch command:** `docker compose up --build`
 
@@ -88,6 +94,15 @@
 - The new inspect helper validates metadata against the CSV, but it is still an operator-side check, not a broader artifact registry or dataset catalog.
 - Claude Code handoff is prepared at the documentation/settings level, but the actual 5-day implementation sprint still depends on disciplined task slicing and daily memory updates.
 - Claude Code plugin support on each machine still depends on local tool installation, especially `pyright`, because the Python LSP plugin needs the local `pyright-langserver` binary.
+
+## Unmerged feature branches (not yet on origin/main)
+The following branches have work in progress but are not yet merged into main:
+- **`feat/runtime-orchestrator`** — Multi-bot instance identity, runtime coordination (parallel to merged BOT_ID work)
+- **`feat/platform-devops`** — Additional platform infrastructure  
+- **`feat/api-dashboard`** — Enhanced API endpoints (e.g., `/api/bots` selector, `?bot=...` query param)
+- **`feat/quant-strategy`** — Quantitative strategy extensions
+
+These are NOT part of the current merged main (7b35a2a). Before documenting as "built", verify the commits are merged to origin/main.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.

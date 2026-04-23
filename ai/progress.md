@@ -18,19 +18,29 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Claude Code working setup readiness across machines: 75%
 
 ## Toward multi-bot / platform (not hackathon scope)
-- Single-bot research/runtime MVP versus target multi-bot platform: 40%
-- Docker containerization and docker-compose orchestration: **90%** (hardened 2-bot stack, healthchecks, log rotation, non-root user)
-- Shared PostgreSQL persistence backend: **85%** (schema-isolated per bot, backward-compat SQLite fallback)
-- Read-only API layer and dashboard: **75%** (FastAPI health/status/trades/events/pnl, storage_backend exposure, single-file HTML dashboard)
-- Multi-bot identity (BOT_ID, per-schema isolation): **85%** (working via DATABASE_SCHEMA env, cleanly separated in docker-compose)
-- VPS deployment readiness: **80%** (docker-compose automation, healthchecks, log rotation, docs complete)
-- Multi-bot orchestration and auto-scaling: **0%** (deferred: would need Kubernetes / multi-host support)
-- Live-mode admin panel (write-enabled): **0%** (scope limited to read-only + preflight-gated dry-run)
+
+### Built on origin/main (7b35a2a)
+- Single-bot research/runtime MVP versus target multi-bot platform: 35%
+- Docker containerization and docker-compose orchestration: **85%** (hardened 2-bot stack, healthchecks, log rotation, non-root user)
+- Shared PostgreSQL persistence backend: **80%** (schema-isolated per bot, backward-compat SQLite fallback)
+- Read-only API layer and dashboard: **70%** (health/status/trades/events/pnl, storage_backend exposure, single-file HTML)
+- Per-bot identity via BOT_ID and DATABASE_SCHEMA: **80%** (working in docker-compose, per-schema isolation)
+- VPS deployment readiness: **75%** (docker-compose automation, healthchecks, log rotation, docs)
+- Multi-bot orchestration and auto-scaling: **0%** (would need Kubernetes / multi-host support)
+- Live-mode admin panel (write-enabled): **0%** (API is read-only only)
 - Redis caching layer: **0%**
-- GitHub Actions smoke CI: **0%** (deferred; minimal local pytest + docker-compose validation sufficient for MVP)
-- Remote credential verification (--remote-check): **0%** (deferred; local preflight sufficient for MVP)
-- Multi-bot API selector (/api/bots, ?bot=...): **0%** (deferred; API_DATABASE_SCHEMA env sufficient for MVP)
-- Analyst and higher-level automation layers: **0%**
+- Analyst and higher-level automation: **0%**
+
+### Pending in feature branches (not yet merged)
+- GitHub Actions smoke CI (branch exists, not merged)
+- Remote credential verification `--remote-check` flag (branch exists, not merged)
+- Multi-bot API selector `/api/bots` + `?bot=...` query param (branch exists, not merged)
+
+### Deferred (design decision)
+These are intentionally not built for the MVP:
+- Multi-host orchestration (post-demo)
+- Auto-scaling (post-demo)
+- Advanced backtesting/slippage modeling (research phase)
 
 ## What is already done
 - Runtime config, risk checks, notifications, exchange adapter, SQLite persistence, startup reconciliation, dry-run mode.
