@@ -23,14 +23,21 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - deterministic metadata sidecars
   - 17 ingest tests passing
 - **Deployment:**
-  - Docker + docker-compose with PostgreSQL + multi-bot support
+  - Docker + docker-compose with PostgreSQL + multi-bot support (hardened)
+  - Non-root user, per-service healthchecks, log rotation (10m × 5 files)
+  - Preflight-gated container startup (config errors fail loudly)
   - Read-only FastAPI layer (`/api/health`, `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`)
   - Single-file HTML dashboard (Tailwind, vanilla JS, 15 s refresh)
   - Per-bot schema isolation (btcusdt/ethusdt schemas in shared PG)
-- **Not built yet (post-MVP scope):**
-  - Live-mode admin panel (write-enabled controls)
-  - Multi-host orchestration (Kubernetes / scaling)
-  - Redis caching, CI/CD automation, advanced backtesting
+  - Step-by-step VPS deployment guide with smoke-test checklist
+- **Not built yet (deferred post-MVP):**
+  - Live-mode admin panel (write-enabled controls; API is read-only for now)
+  - Multi-host orchestration (Kubernetes / auto-scaling)
+  - GitHub Actions smoke CI (minimal; local pytest + docker-compose validation suffices for MVP)
+  - Remote credential verification via --remote-check flag
+  - Multi-bot API selector (/api/bots endpoint, ?bot=... query)
+  - Redis caching layer
+  - Advanced backtesting and slippage modeling
   - Full multi-bot platform architecture from the tech spec
 
 ## Repository structure

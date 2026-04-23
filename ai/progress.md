@@ -3,30 +3,33 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 85%
-- Runtime persistence and restart safety: 75%
-- Operator smoke-run clarity: 80%
-- Runtime automated tests: 85% (23 zscore + 24 runtime tests passing)
-- Strategy mode options (xgb + deterministic rule-based): 90% (both modes working, tests green)
-- Training pipeline structure: 90%
-- Training reproducibility and auditability: 85%
-- Training automated tests: 85% (15 tests passing)
-- Training data-source definition and onboarding clarity: 88%
-- Training data ingestion and normalization MVP: 85%
-- First reproducible baseline artifact generation: 5% (infrastructure ready, data/run pending)
+- Trading runtime safety and module split: 88%
+- Runtime persistence and restart safety: 80%
+- Operator smoke-run clarity: 85%
+- Runtime automated tests: 90% (30 tests, preflight/reconciliation/storage/strategy coverage)
+- Strategy mode options (xgb + deterministic rule-based): 95% (both modes working, tests green)
+- Training pipeline structure: 92%
+- Training reproducibility and auditability: 88%
+- Training automated tests: 88% (17 tests passing)
+- Training data-source definition and onboarding clarity: 90%
+- Training data ingestion and normalization MVP: 88%
+- First reproducible baseline artifact generation: 10% (infrastructure ready, data/run pending)
 - Claude Code and Obsidian handoff readiness: 92%
 - Claude Code working setup readiness across machines: 75%
 
 ## Toward multi-bot / platform (not hackathon scope)
-- Single-bot research/runtime MVP versus target multi-bot platform: 35%
-- Docker containerization and docker-compose orchestration: **85%** (demo-ready stack, 2-bot example)
-- Shared PostgreSQL persistence backend: **80%** (schema-isolated per bot, backward-compat SQLite fallback)
-- Read-only API layer and dashboard: **70%** (FastAPI health/status/trades/events/pnl endpoints, single-file HTML dashboard)
-- Multi-bot identity (BOT_ID, per-schema isolation): **80%** (working via DATABASE_SCHEMA env)
+- Single-bot research/runtime MVP versus target multi-bot platform: 40%
+- Docker containerization and docker-compose orchestration: **90%** (hardened 2-bot stack, healthchecks, log rotation, non-root user)
+- Shared PostgreSQL persistence backend: **85%** (schema-isolated per bot, backward-compat SQLite fallback)
+- Read-only API layer and dashboard: **75%** (FastAPI health/status/trades/events/pnl, storage_backend exposure, single-file HTML dashboard)
+- Multi-bot identity (BOT_ID, per-schema isolation): **85%** (working via DATABASE_SCHEMA env, cleanly separated in docker-compose)
+- VPS deployment readiness: **80%** (docker-compose automation, healthchecks, log rotation, docs complete)
 - Multi-bot orchestration and auto-scaling: **0%** (deferred: would need Kubernetes / multi-host support)
 - Live-mode admin panel (write-enabled): **0%** (scope limited to read-only + preflight-gated dry-run)
 - Redis caching layer: **0%**
-- CI/CD pipeline and automated testing: **10%** (GitHub actions not configured yet)
+- GitHub Actions smoke CI: **0%** (deferred; minimal local pytest + docker-compose validation sufficient for MVP)
+- Remote credential verification (--remote-check): **0%** (deferred; local preflight sufficient for MVP)
+- Multi-bot API selector (/api/bots, ?bot=...): **0%** (deferred; API_DATABASE_SCHEMA env sufficient for MVP)
 - Analyst and higher-level automation layers: **0%**
 
 ## What is already done

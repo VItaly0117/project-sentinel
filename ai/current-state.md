@@ -55,26 +55,31 @@
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
 ## Docker + PostgreSQL (2026-04-22)
-- `requirements.txt` created with all runtime/training/DB deps.
-- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
-- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
-- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
-- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+- `requirements.txt` created with all runtime/training/DB/API deps (fastapi, uvicorn, psycopg2).
+- `Dockerfile` — Python 3.12-slim, non-root `sentinel` user, entrypoint dispatcher for `bot` or `api` mode.
+- `docker/entrypoint.sh` — dispatches to runtime (with preflight-gated startup) or FastAPI server.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` + `eth-bot` + `api` (hardened):
+  - Per-service log rotation (10m × 5 files, ~50MB cap)
+  - Healthchecks on all services (postgres readiness, bot preflight, API liveness)
+  - Postgres port bound to `127.0.0.1` (not public)
+  - API port bound to `127.0.0.1:8000`
+- `StorageConfig` has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` has `PostgreSQLRuntimeStorage` (psycopg2) and `create_storage()` factory.
 - `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
-- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
-- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
-- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
-- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- Schema isolation: each bot instance writes to its own PostgreSQL schema (btcusdt/ethusdt/custom).
+- `sentinel_runtime/preflight.py` now reports PostgreSQL mode when `DATABASE_URL` is set.
+- API `/api/status` endpoint exposes `storage_backend` (postgres/sqlite), `storage_target`, and `bot_id`.
+- 73 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore + 3 new).
 - **Launch command:** `docker compose up --build`
 
 ## Current debt and risks
-- Redis, live-mode admin panel (beyond read-only API), CI/CD pipeline, and analyst workflow are still absent.
+- Redis, live-mode admin panel (beyond read-only API), CI/CD smoke automation, and analyst workflow are still absent.
 - Runtime persistence is **local SQLite by default**; PostgreSQL is available via `DATABASE_URL` env. In either case, deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
 - In dry-run mode, exchange-side open position/order limits reflect the real account state only; simulated orders do not create exchange exposure.
 - Runtime still depends on a local model artifact named `monster_v4_2.json`.
-- Runtime preflight is local-only and does not verify that exchange credentials are accepted by Bybit yet; it only verifies presence and launch-time safety gates.
+- Runtime preflight is local-only and does not verify that exchange credentials are accepted by Bybit yet; it only verifies presence and launch-time safety gates. (Optional `--remote-check` flag deferred.)
 - Training labels still assume OHLC barrier touches are executable and do not capture slippage, spread, latency, or order book effects.
 - Training still has no walk-forward validation, slippage model, spread model, or microstructure-aware execution assumptions.
 - The ingest layer is intentionally local-first: it normalizes saved raw files, but it still does not download, paginate, or backfill exchange datasets automatically.

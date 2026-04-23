@@ -29,28 +29,41 @@ Both paths start with the same preflight and dry-run logic. Choose based on your
 docker compose up --build
 ```
 
-Expected: 4 services start — postgres, btc-bot, eth-bot, api.
+Expected: 4 services start and healthcheck green within ~60 s:
+- `postgres` — PostgreSQL 16, log rotation enabled
+- `btc-bot` — Sentinel runtime, preflight-gated, non-root user
+- `eth-bot` — Sentinel runtime, preflight-gated, non-root user
+- `api` — FastAPI on `127.0.0.1:8000`, liveness probe enabled
 
 Watch logs:
 ```bash
 docker compose logs -f
 ```
 
-Expected per bot:
+Expected per bot (preflight runs, then runtime bootstraps):
 ```
-Runtime bootstrapped. strategy=xgb symbol=BTCUSDT dry_run_mode=True
+[+] Running 4/4
+  ✔ postgres Healthy
+  ✔ btc-bot Healthy
+  ✔ eth-bot Healthy
+  ✔ api Healthy
+
+[btc-bot] Runtime bootstrapped. strategy=xgb symbol=BTCUSDT dry_run_mode=True
 ```
 
 ### B.2 Health checks
 ```bash
-# Service status
+# Service status (all should be "Up (healthy)")
 docker compose ps
 
 # API health
 curl -s http://127.0.0.1:8000/api/health | jq
 
-# Bot status (shows PostgreSQL mode + schema isolation)
+# Bot status (shows storage backend + schema isolation)
 curl -s http://127.0.0.1:8000/api/status | jq
+
+# Check logs with rotation (each bot logs to 10m files × 5 max)
+docker compose logs btc-bot --tail 30
 ```
 
 Expected `/api/status` response:
@@ -59,12 +72,15 @@ Expected `/api/status` response:
   "dry_run_mode": true,
   "strategy_mode": "xgb",
   "storage_backend": "postgres",
-  "storage_target": "postgresql://.../btcusdt",
+  "storage_target": "postgresql://.../sentinel/btcusdt",
   "bot_id": "btcusdt",
+  "db_exists": true,
   "last_processed_candle_time": "...",
   "last_action_side": null
 }
 ```
+
+**Note:** The `docker/entrypoint.sh` dispatcher runs preflight inside the container before the runtime loop, so config errors fail loudly instead of crash-looping.
 
 ### B.3 Inspect PostgreSQL
 ```bash
