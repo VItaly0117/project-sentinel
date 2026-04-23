@@ -20,17 +20,20 @@ warn()  { echo -e "${YELLOW}[backup] WARN:${NC} $*"; }
 die()   { echo -e "${RED}[backup] ERROR:${NC} $*" >&2; exit 1; }
 
 OUT_DIR="${REPO_ROOT}/backups"
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --out)
-      shift
-      OUT_DIR="${1:?--out requires a directory path}"
-      ;;
+      [[ $# -ge 2 ]] || die "--out requires a directory path"
+      OUT_DIR="$2"
+      shift 2 ;;
+    --out=*)
+      OUT_DIR="${1#--out=}"
+      shift ;;
     --help|-h)
       echo "Usage: $0 [--out <directory>]"
       echo "  Defaults to backups/ in the repo root."
       exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    *) die "Unknown argument: $1" ;;
   esac
 done
 

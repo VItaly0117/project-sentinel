@@ -22,8 +22,8 @@ SERVICE=""
 EXTRA_ARGS=()
 TAIL_LINES=100
 
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --help|-h)
       echo "Usage: $0 [service] [--last N] [docker-compose-logs-flags...]"
       echo ""
@@ -31,22 +31,33 @@ for arg in "$@"; do
       echo "Defaults: tail all services, last 100 lines, follow."
       exit 0 ;;
     --last)
-      shift
-      TAIL_LINES="${1:-100}"
-      ;;
+      [[ $# -ge 2 ]] || { echo "[logs] --last requires a number" >&2; exit 1; }
+      TAIL_LINES="$2"
+      shift 2 ;;
+    --last=*)
+      TAIL_LINES="${1#--last=}"
+      shift ;;
     postgres|btc-bot|eth-bot|api)
-      SERVICE="$arg" ;;
+      SERVICE="$1"
+      shift ;;
     *)
-      EXTRA_ARGS+=("$arg") ;;
+      EXTRA_ARGS+=("$1")
+      shift ;;
   esac
 done
 
 if [[ -n "${SERVICE}" ]]; then
   echo "[logs] Following: ${SERVICE} (last ${TAIL_LINES} lines)"
-  # shellcheck disable=SC2086
-  exec docker compose logs -f --tail="${TAIL_LINES}" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" "${SERVICE}"
+  if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+    exec docker compose logs -f --tail="${TAIL_LINES}" "${EXTRA_ARGS[@]}" "${SERVICE}"
+  else
+    exec docker compose logs -f --tail="${TAIL_LINES}" "${SERVICE}"
+  fi
 else
   echo "[logs] Following: all services (last ${TAIL_LINES} lines per service)"
-  # shellcheck disable=SC2086
-  exec docker compose logs -f --tail="${TAIL_LINES}" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+  if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+    exec docker compose logs -f --tail="${TAIL_LINES}" "${EXTRA_ARGS[@]}"
+  else
+    exec docker compose logs -f --tail="${TAIL_LINES}"
+  fi
 fi

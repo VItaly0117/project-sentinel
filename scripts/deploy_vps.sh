@@ -4,7 +4,7 @@
 # Usage (run on the VPS, inside the repo):
 #   ./scripts/deploy_vps.sh            # git pull + start/update
 #   ./scripts/deploy_vps.sh --no-pull  # skip git pull (already on desired commit)
-#   ./scripts/deploy_vps.sh --rebuild  # force image rebuild
+#   ./scripts/deploy_vps.sh --rebuild  # force fresh rebuild (--no-cache)
 #
 # Safe: never wipes volumes, never touches .env, uses --ff-only to prevent
 # accidental merge commits.
@@ -22,17 +22,17 @@ die()   { echo -e "${RED}[deploy-vps] ERROR:${NC} $*" >&2; exit 1; }
 
 # ── parse args ──────────────────────────────────────────────────────────────
 DO_PULL=true
-REBUILD_FLAG=""
-for arg in "$@"; do
-  case "$arg" in
-    --no-pull)  DO_PULL=false ;;
-    --rebuild)  REBUILD_FLAG="--build" ;;
+FORCE_NO_CACHE=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-pull)  DO_PULL=false; shift ;;
+    --rebuild)  FORCE_NO_CACHE=true; shift ;;
     --help|-h)
       echo "Usage: $0 [--no-pull] [--rebuild]"
       echo "  --no-pull   skip 'git pull' (useful when you've already checked out the desired commit)"
-      echo "  --rebuild   force Docker image rebuild before starting"
+      echo "  --rebuild   force fresh rebuild without Docker layer cache (--no-cache)"
       exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    *) die "Unknown argument: $1" ;;
   esac
 done
 
@@ -75,9 +75,13 @@ if [[ "${DO_PULL}" == "true" ]]; then
 fi
 
 # ── launch ──────────────────────────────────────────────────────────────────
+if [[ "${FORCE_NO_CACHE}" == "true" ]]; then
+  info "Force rebuild (--no-cache) — this may take several minutes..."
+  docker compose build --no-cache
+fi
+
 info "Starting stack (VPS mode)..."
-# shellcheck disable=SC2086
-docker compose up ${REBUILD_FLAG} --build -d
+docker compose up --build -d
 
 info "Waiting 15 s for services to settle..."
 sleep 15
