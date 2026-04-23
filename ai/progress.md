@@ -17,12 +17,17 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Claude Code and Obsidian handoff readiness: 92%
 - Claude Code working setup readiness across machines: 75%
 
-## Target-system progress
-- Single-bot research/runtime MVP versus target platform: 30%
-- Multi-bot orchestration and centralized control: 5%
-- Admin panel and operator UI: 30%  ← read-only API + dashboard scaffolded
-- Shared infra such as DB/Redis/Docker/CI-CD: 10%
-- Analyst and higher-level automation layers: 0%
+## Toward multi-bot / platform (not hackathon scope)
+- Single-bot research/runtime MVP versus target multi-bot platform: 35%
+- Docker containerization and docker-compose orchestration: **85%** (demo-ready stack, 2-bot example)
+- Shared PostgreSQL persistence backend: **80%** (schema-isolated per bot, backward-compat SQLite fallback)
+- Read-only API layer and dashboard: **70%** (FastAPI health/status/trades/events/pnl endpoints, single-file HTML dashboard)
+- Multi-bot identity (BOT_ID, per-schema isolation): **80%** (working via DATABASE_SCHEMA env)
+- Multi-bot orchestration and auto-scaling: **0%** (deferred: would need Kubernetes / multi-host support)
+- Live-mode admin panel (write-enabled): **0%** (scope limited to read-only + preflight-gated dry-run)
+- Redis caching layer: **0%**
+- CI/CD pipeline and automated testing: **10%** (GitHub actions not configured yet)
+- Analyst and higher-level automation layers: **0%**
 
 ## What is already done
 - Runtime config, risk checks, notifications, exchange adapter, SQLite persistence, startup reconciliation, dry-run mode.
@@ -35,17 +40,16 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 - Claude Code project instructions, project settings, hackathon roadmap, demo checklist, and an Obsidian-ready memory graph starter.
 - A small Claude Code working set: one official Python LSP plugin plus specialized low-cost project subagents.
 
-## What is still missing
-- Platform infrastructure and deployment layers.
-- Walk-forward research workflow and stronger artifact integrity.
-- Admin/control surface for operators.
-- Production-grade multi-instance coordination.
-- Automated downloading/pagination for historical exchange backfills.
-- Broader source-format coverage beyond the currently supported Binance/Bybit MVP shapes.
-- A full operator playbook that goes from normalized data to a documented first baseline training run.
-- Exchange-credential verification against a real Bybit endpoint before launch.
-- The actual 5-day execution backlog still needs to be burned down against real data, real `.env`, and real demo artifacts.
-- Multi-machine Claude Code setup still depends on local installation of Claude Code, Node.js, and `pyright`.
+## What is still missing (post-MVP scope)
+- **Production hardening**: persistent volume mounts, secrets management, log aggregation, Redis caching.
+- **Multi-host orchestration**: Kubernetes or Docker Swarm for scaling bots across multiple machines.
+- **Live-mode admin panel**: write-enabled controls (not in scope for read-only API + preflight-gated demo).
+- **Walk-forward research workflow**: proper backtesting, multi-timeframe analysis, slippage/spread/latency models.
+- **Automated data backfill**: downloading and pagination from exchanges (ingest is currently manual file-based).
+- **Broader exchange coverage**: currently hard-coded for Bybit; Binance/Deribit/other DEXs deferred.
+- **Stronger training artifact integrity**: provenance chain, distributed training, auto-retraining pipelines.
+- **Exchange credential verification**: preflight currently checks env/config only, not Bybit API acceptance.
+- **CI/CD pipeline**: automated testing on merge, release automation, artifact signing.
 
 ## Next checkpoint
 - Execute Day 1 of `docs/hackathon-roadmap.md`: real preflight, real dry-run, and one real ingest path.

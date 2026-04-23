@@ -68,8 +68,8 @@
 - **Launch command:** `docker compose up --build`
 
 ## Current debt and risks
-- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
-- Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
+- Redis, live-mode admin panel (beyond read-only API), CI/CD pipeline, and analyst workflow are still absent.
+- Runtime persistence is **local SQLite by default**; PostgreSQL is available via `DATABASE_URL` env. In either case, deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
 - In dry-run mode, exchange-side open position/order limits reflect the real account state only; simulated orders do not create exchange exposure.

@@ -8,45 +8,74 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 - A stabilization-first codebase: safety, tests, persistence, reproducibility, and operator clarity come before platform expansion.
 
 ## Current status
-- Runtime:
-  - typed env config
-  - risk limits
-  - SQLite persistence
-  - startup reconciliation
-  - dry-run mode
-  - focused pytest coverage
-- Training:
+- **Runtime:**
+  - typed env config + dual storage (SQLite local / PostgreSQL)
+  - risk limits + startup reconciliation + dry-run mode
+  - deterministic trading logic (XGBoost or zscore rule-based)
+  - preflight-gated launch with safety checks
+  - focused pytest coverage (30 tests passing)
+- **Training:**
   - modular dataset/split/train/evaluate flow
-  - validation-only early stopping
-  - deterministic seed handling
-  - artifact metadata and checksums
-  - focused pytest coverage
-- Not built yet:
-  - admin panel
-  - cloud orchestration
-  - shared infra like PostgreSQL/Redis
-  - full multi-bot target platform from the tech spec
+  - deterministic artifact generation with metadata + checksums
+  - focused pytest coverage (17 tests passing)
+- **Data ingest:**
+  - Binance/Bybit CSV/JSON normalization
+  - deterministic metadata sidecars
+  - 17 ingest tests passing
+- **Deployment:**
+  - Docker + docker-compose with PostgreSQL + multi-bot support
+  - Read-only FastAPI layer (`/api/health`, `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`)
+  - Single-file HTML dashboard (Tailwind, vanilla JS, 15 s refresh)
+  - Per-bot schema isolation (btcusdt/ethusdt schemas in shared PG)
+- **Not built yet (post-MVP scope):**
+  - Live-mode admin panel (write-enabled controls)
+  - Multi-host orchestration (Kubernetes / scaling)
+  - Redis caching, CI/CD automation, advanced backtesting
+  - Full multi-bot platform architecture from the tech spec
 
 ## Repository structure
 ```text
 .
+├── .dockerignore
 ├── .env.example
+├── Dockerfile
 ├── README.md
+├── docker-compose.yml
+├── requirements.txt
+├── requirements-api.txt
+├── sentineltest.py
+├── train_v4.py
 ├── ai/
 │   ├── current-state.md
 │   ├── progress.md
 │   ├── project-brief.md
-│   ├── rules.md
-│   ├── architecture-map.md
-│   ├── module-briefs/
 │   └── session-notes/
-├── artifacts/
+├── api/
+│   ├── main.py
+│   └── db.py
+├── dashboard/
+│   └── index.html
 ├── docs/
+│   ├── hackathon-operator-checklist.md
+│   ├── vps-deployment.md
+│   ├── training-data-sources.md
+│   └── ...
+├── docker/
+│   └── entrypoint.sh
 ├── sentinel_runtime/
+│   ├── runtime.py
+│   ├── storage.py (SQLite + PostgreSQL)
+│   ├── config.py
+│   └── ...
 ├── sentinel_training/
-├── tests/
-├── sentineltest.py
-└── train_v4.py
+│   ├── pipeline.py
+│   ├── ingest/
+│   └── ...
+└── tests/
+    ├── test_runtime_mvp.py
+    ├── test_training_pipeline.py
+    ├── test_training_ingest.py
+    └── test_zscore_strategy.py
 ```
 
 ## Core modules

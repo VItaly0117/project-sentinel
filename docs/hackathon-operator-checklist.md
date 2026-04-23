@@ -1,14 +1,99 @@
 # Hackathon Operator Checklist
 
-This is the step-by-step guide to reproduce the demo from scratch.
+Two deployment paths:
 
-## Prerequisites
-- Clone the repo
-- Create `.env` from `.env.example` with valid Bybit testnet/demo credentials
+**Path A: Local (Python + SQLite)** — Quick smoke tests, development, single-bot only
+**Path B: Docker Compose (PostgreSQL + API + Dashboard)** — Realistic multi-bot demo, production-like
+
+Both paths start with the same preflight and dry-run logic. Choose based on your demo scope.
+
+---
+
+## Prerequisites (Both Paths)
+- Clone the repo: `git clone git@github.com:VItaly0117/project-sentinel.git`
+- Copy `monster_v4_2.json` to repo root (see `docs/vps-deployment.md`)
+- Create `.env` from `.env.example` with Bybit testnet/demo credentials
 - Keep `EXCHANGE_ENV=demo` or `EXCHANGE_ENV=testnet`
-- Keep `DRY_RUN_MODE=true` for all smoke runs
+- Keep `DRY_RUN_MODE=true` for all smoke runs and docker testing
 
-## Phase 1: Runtime Preflight (5 min)
+**For Path B (Docker):**
+- Docker Engine 25+ with `docker compose` plugin installed
+- `POSTGRES_PASSWORD` env var (or use default `sentinel_dev` for demo)
+
+---
+
+## Path B: Docker Compose (Multi-Bot Demo) — 20 min total
+
+### B.1 Start the stack
+```bash
+docker compose up --build
+```
+
+Expected: 4 services start — postgres, btc-bot, eth-bot, api.
+
+Watch logs:
+```bash
+docker compose logs -f
+```
+
+Expected per bot:
+```
+Runtime bootstrapped. strategy=xgb symbol=BTCUSDT dry_run_mode=True
+```
+
+### B.2 Health checks
+```bash
+# Service status
+docker compose ps
+
+# API health
+curl -s http://127.0.0.1:8000/api/health | jq
+
+# Bot status (shows PostgreSQL mode + schema isolation)
+curl -s http://127.0.0.1:8000/api/status | jq
+```
+
+Expected `/api/status` response:
+```json
+{
+  "dry_run_mode": true,
+  "strategy_mode": "xgb",
+  "storage_backend": "postgres",
+  "storage_target": "postgresql://.../btcusdt",
+  "bot_id": "btcusdt",
+  "last_processed_candle_time": "...",
+  "last_action_side": null
+}
+```
+
+### B.3 Inspect PostgreSQL
+```bash
+# List schemas (one per bot)
+docker compose exec postgres psql -U sentinel sentinel -c "\dn"
+# Expected: btcusdt, ethusdt, public
+
+# Check btc-bot state
+docker compose exec postgres psql -U sentinel sentinel -c "SET search_path TO btcusdt; SELECT key, value_text FROM runtime_state LIMIT 5;"
+```
+
+### B.4 View the dashboard
+Open `http://localhost:8000/` in a browser.
+- Shows current bot status, last 20 trades, last 20 events, estimated PnL.
+- Auto-refreshes every 15 seconds.
+
+### B.5 Switch which bot the dashboard reads
+```bash
+# Restart API to read eth-bot schema instead
+docker compose -e API_DATABASE_SCHEMA=ethusdt up -d api
+```
+
+**Path B complete:** Multi-bot demo running, PostgreSQL persisting per-bot, Dashboard showing isolation.
+
+---
+
+## Path A: Local Python (Single-Bot, SQLite) — 30 min total
+
+### Phase 1: Runtime Preflight (5 min)
 
 ### 1.1 Check environment
 ```bash
@@ -38,7 +123,7 @@ Expected: same output, but strategy is now rule-based instead of model-based.
 
 ---
 
-## Phase 2: Runtime Dry-Run (10 min)
+### Phase 2: Runtime Dry-Run (10 min)
 
 ### 2.1 Start XGBoost dry-run
 ```bash
@@ -70,7 +155,7 @@ Stop with `Ctrl+C`.
 
 ---
 
-## Phase 3: Data Ingestion (20 min)
+### Phase 3: Data Ingestion (20 min)
 
 ### 3.1 Download Binance data
 - Go to https://data.binance.vision/
@@ -112,7 +197,7 @@ Expected:
 
 ---
 
-## Phase 4: Training Baseline (15 min)
+### Phase 4: Training Baseline (15 min)
 
 ### 4.1 Train XGBoost baseline
 ```bash
@@ -149,7 +234,7 @@ cat artifacts/train_v4/binance-btcusdt-5m-baseline/checksums.json | python3 -m j
 
 ---
 
-## Phase 5: Validation Dataset (optional, 15 min)
+### Phase 5: Validation Dataset (optional, 15 min)
 
 ### 5.1 Download Bybit data
 If you have Bybit historical data (e.g., from the API), save as JSON:
@@ -180,7 +265,7 @@ python3 -m sentinel_training.ingest.inspect \
 
 ---
 
-## Phase 6: Final Smoke Pass (5 min)
+### Phase 6: Final Smoke Pass (5 min)
 
 ### 6.1 Confirm preflight
 ```bash
