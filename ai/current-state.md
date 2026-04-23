@@ -142,6 +142,19 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - To run: `uvicorn api.main:app --reload --port 8000` from project root, then open `http://localhost:8000`.
 - Auto-docs at `http://localhost:8000/api/docs`.
 
+## Deploy helper scripts (2026-04-23)
+- Six operator scripts added to `scripts/`:
+  - `deploy_local.sh` — local Arch/Linux bring-up (warns on missing .env/model, fails fast on docker issues)
+  - `deploy_vps.sh` — VPS bring-up with git pull --ff-only, hard errors on missing .env/model
+  - `smoke_check.sh` — 7 automated checks (service health, API health, bot logs, in-container preflight, PG schemas)
+  - `logs_follow.sh` — tail all or one service, forwarding docker-compose-logs flags
+  - `stop_stack.sh` — safe stop (keep data / bots-only / wipe with confirmation prompt)
+  - `backup_db.sh` — pg_dump wrapper writing timestamped SQL to `backups/`
+- All scripts are `chmod +x`, bash-strict (`set -euo pipefail`), and print colored output.
+- `docs/deploy-helpers.md` created — full reference including staging vs VPS parity table and troubleshooting.
+- `docs/vps-deployment.md` updated with shortcut callouts pointing to the new scripts.
+- `README.md` updated with a "Deploy helpers" table.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
