@@ -174,6 +174,14 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - Six new tests in `tests/test_runtime_mvp.py` covering: no-override → spec default, override precedence, empty-string fallback, invalid value, out-of-range value. Also clears env between tests so the `os.environ.setdefault` pattern in `load_dotenv_if_present` doesn't leak.
 - Tests: 84/84 passed.
 
+## Telegram polling split (2026-04-24)
+- `NotificationConfig.command_polling_enabled: bool = True` added — decouples inbound `getUpdates` from outbound `sendMessage`.
+- New env var `TELEGRAM_COMMAND_POLLING_ENABLED` (default `true`, backward-compatible for single-bot setups).
+- `TelegramNotifier.start_command_listener()` now short-circuits when polling is disabled; outbound alerts (`send_startup`, `send_trade_*`, `send_runtime_*`, `send_message`) continue to work.
+- `docker-compose.yml`: `btc-bot` keeps polling on (true), `eth-bot` turns polling off (false). Both still send alerts. Avoids Telegram HTTP 409 Conflict when two containers share one bot token.
+- Six new tests in `tests/test_runtime_mvp.py` covering: default true, explicit false, truthy-string parsing, polling-disabled skips thread, alerts still work when polling disabled, polling-enabled starts thread.
+- Tests: 90/90 passed.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

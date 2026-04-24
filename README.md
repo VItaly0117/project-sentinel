@@ -213,6 +213,23 @@ TP/SL, risk limits, dry-run gating, reconciliation, and notifications are unaffe
 
 In the shipped `docker-compose.yml`, `btc-bot` is the **control path** on XGB and `eth-bot` runs the zscore engine with `ZSCORE_PROFILE=demo_relaxed`. Override with `BTC_STRATEGY_MODE`, `ETH_STRATEGY_MODE`, `ZSCORE_PROFILE`, or any individual `ZSCORE_*` env var in `.env`.
 
+### Telegram notifier
+
+Outbound alerts (trade opened / closed, runtime errors, blocked) use `sendMessage` and are safe on every bot. Inbound `/status` and `/help` commands use `getUpdates` long-poll — and Telegram only allows **one** active `getUpdates` consumer per bot token. Two containers sharing the same token both polling triggers HTTP `409 Conflict`.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | _(unset)_ | Bot token. No alerts or polling without it. |
+| `TELEGRAM_CHAT_ID` | _(unset)_ | Chat id for outbound alerts. |
+| `TELEGRAM_COMMAND_POLLING_ENABLED` | `true` | If `false`, the instance skips `getUpdates` but still sends alerts. |
+
+In the shipped compose, `btc-bot` polls commands (`TELEGRAM_COMMAND_POLLING_ENABLED=true`) and `eth-bot` does not (`false`). Both still send alerts. Override via `.env`:
+
+```bash
+# Swap which bot owns /status and /help
+BTC_TELEGRAM_COMMAND_POLLING=false ETH_TELEGRAM_COMMAND_POLLING=true docker compose up -d
+```
+
 ## Deploy helpers
 
 One-command operator scripts for local and VPS bring-up:

@@ -67,6 +67,9 @@ services:
       BOT_ID: btcusdt
       STRATEGY_MODE: ${BTC_STRATEGY_MODE:-xgb}
       SIGNAL_CONFIDENCE_OVERRIDE: ${BTC_SIGNAL_CONFIDENCE:-0.30}
+      # Only btc-bot polls Telegram getUpdates. eth-bot sends alerts but skips
+      # polling so the two containers don't race for the same token (409 Conflict).
+      TELEGRAM_COMMAND_POLLING_ENABLED: ${BTC_TELEGRAM_COMMAND_POLLING:-true}
       RUNTIME_DB_PATH: /tmp/btc_runtime.db
     env_file:
       - path: .env
@@ -97,6 +100,9 @@ services:
       BOT_ID: ethusdt
       STRATEGY_MODE: ${ETH_STRATEGY_MODE:-zscore_mean_reversion_v1}
       ZSCORE_PROFILE: ${ZSCORE_PROFILE:-demo_relaxed}
+      # eth-bot keeps outbound alerts enabled but does NOT poll getUpdates —
+      # two bots sharing one token polling concurrently trigger HTTP 409 Conflict.
+      TELEGRAM_COMMAND_POLLING_ENABLED: ${ETH_TELEGRAM_COMMAND_POLLING:-false}
       RUNTIME_DB_PATH: /tmp/eth_runtime.db
     env_file:
       - path: .env
