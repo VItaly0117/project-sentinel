@@ -1,0 +1,20 @@
+{
+  "git_sha": "dec130981fb275a89b5d1a36df11393aa17a8a25",
+  "created_at": "2026-04-24T23:18:48Z",
+  "data_path": "data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv",
+  "model_path": "monster_v4_2.json",
+  "source": "binance",
+  "symbol": "BTCUSDT",
+  "interval": "5m",
+  "range": "2024-01-01_to_2024-06-30",
+  "confidence_values": [0.30, 0.45, 0.51, 0.60],
+  "initial_balance": 1000,
+  "order_qty": 0.001,
+  "tp_pct": 0.012,
+  "sl_pct": 0.006,
+  "look_ahead": 36,
+  "commission": 0.00055,
+  "interval_minutes": 5,
+  "csv_sha256": "de5c569acf7918cbef9547c4f2c8cd582b6f1ce40788dba83a778a8ff02db032",
+  "model_sha256": "b55e8872173bf23da568e8b8e5353d3443b047ffa053cab9f7bb682f8852c367"
+}
