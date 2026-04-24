@@ -49,8 +49,12 @@ services:
     restart: unless-stopped
     <<: *default-logging
 
-  # Control path: BTC stays on the XGBoost model with spec-default thresholds.
-  # Override via .env if you want a different strategy for BTC.
+  # Control path: BTC stays on the XGBoost model. For demo conditions the
+  # spec-default SIGNAL_CONFIDENCE=0.51 rarely fires (class probabilities in
+  # a short window typically peak ~0.15), so btc-bot ships with an opt-in
+  # SIGNAL_CONFIDENCE_OVERRIDE defaulting to 0.30. The global SIGNAL_CONFIDENCE
+  # default is unchanged; set BTC_SIGNAL_CONFIDENCE= (empty) to disable the
+  # override, or to any value to tune it.
   btc-bot:
     build: .
     depends_on:
@@ -62,6 +66,7 @@ services:
       BYBIT_SYMBOL: BTCUSDT
       BOT_ID: btcusdt
       STRATEGY_MODE: ${BTC_STRATEGY_MODE:-xgb}
+      SIGNAL_CONFIDENCE_OVERRIDE: ${BTC_SIGNAL_CONFIDENCE:-0.30}
       RUNTIME_DB_PATH: /tmp/btc_runtime.db
     env_file:
       - path: .env

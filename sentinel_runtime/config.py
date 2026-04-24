@@ -144,10 +144,22 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         kline_limit=_parse_int("BYBIT_KLINE_LIMIT", 350, minimum=50),
         closed_pnl_limit=_parse_int("BYBIT_CLOSED_PNL_LIMIT", 100, minimum=1),
     )
+    # SIGNAL_CONFIDENCE_OVERRIDE is an opt-in demo knob. When set, it takes
+    # precedence over SIGNAL_CONFIDENCE (which keeps its spec default of 0.51).
+    # Kept as a separate env var so "demo-tuned" bots are obvious in compose
+    # diffs and in logs, rather than silently lowering the spec constant.
+    base_confidence = _parse_float("SIGNAL_CONFIDENCE", 0.51, minimum=0.0, maximum=1.0)
+    confidence_override = _parse_optional_float(
+        "SIGNAL_CONFIDENCE_OVERRIDE", minimum=0.0, maximum=1.0
+    )
+    effective_confidence = (
+        confidence_override if confidence_override is not None else base_confidence
+    )
+
     strategy = StrategyConfig(
         model_path=model_path,
         order_qty=_parse_decimal("ORDER_QTY", "0.001", minimum=Decimal("0.00000001")),
-        confidence_threshold=_parse_float("SIGNAL_CONFIDENCE", 0.51, minimum=0.0, maximum=1.0),
+        confidence_threshold=effective_confidence,
         tp_pct=_parse_decimal("TP_PCT", "0.012", minimum=Decimal("0")),
         sl_pct=_parse_decimal("SL_PCT", "0.006", minimum=Decimal("0")),
         price_decimals=_parse_int("PRICE_DECIMALS", 2, minimum=0),
@@ -257,6 +269,25 @@ def _parse_float(
     maximum: float | None = None,
 ) -> float:
     raw_value = _read_env(name, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"Invalid float value for {name}: {raw_value}.") from exc
+    if minimum is not None and value < minimum:
+        raise ConfigError(f"{name} must be >= {minimum}.")
+    if maximum is not None and value > maximum:
+        raise ConfigError(f"{name} must be <= {maximum}.")
+    return value
+
+
+def _parse_optional_float(
+    name: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
+    raw_value = _read_optional_env(name)
+    if raw_value is None:
+        return None
     try:
         value = float(raw_value)
     except ValueError as exc:

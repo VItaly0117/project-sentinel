@@ -165,6 +165,15 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - Risk manager, reconciliation, dry-run gating, TP/SL, notifications, persistence: untouched.
 - Tests: 79/79 passed (6 new around `params_from_env`, including a regression test on the exact candle that failed the previous demo run).
 
+## BTC/XGB demo-tuning override (2026-04-24)
+- New opt-in env var `SIGNAL_CONFIDENCE_OVERRIDE` in `sentinel_runtime/config.py` — when set (0.0–1.0), takes precedence over `SIGNAL_CONFIDENCE`. Empty string = unset (compose empty-env pattern).
+- `SIGNAL_CONFIDENCE` default (`0.51`) is unchanged. Global spec behavior untouched.
+- `sentinel_runtime/runtime.py` bootstrap log now reports `confidence=X.XXX (source=default|override)` so operators can confirm which value is active.
+- `docker-compose.yml`: `btc-bot` ships with `SIGNAL_CONFIDENCE_OVERRIDE=${BTC_SIGNAL_CONFIDENCE:-0.30}` (demo-only). `eth-bot` doesn't set it (irrelevant to zscore). Operators can override via `.env` (`BTC_SIGNAL_CONFIDENCE=0.25`) or disable (`BTC_SIGNAL_CONFIDENCE=`).
+- `sentinel_runtime/signals.py` is **not touched** — the engine still reads `confidence_threshold` from `StrategyConfig` exactly as before. Red-zone rule respected.
+- Six new tests in `tests/test_runtime_mvp.py` covering: no-override → spec default, override precedence, empty-string fallback, invalid value, out-of-range value. Also clears env between tests so the `os.environ.setdefault` pattern in `load_dotenv_if_present` doesn't leak.
+- Tests: 84/84 passed.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

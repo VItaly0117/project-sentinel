@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -114,12 +115,18 @@ class TradingRuntime:
                 "last_action_order_id": self._last_action_order_id,
             },
         )
+        confidence_source = (
+            "override" if os.environ.get("SIGNAL_CONFIDENCE_OVERRIDE", "").strip() else "default"
+        )
         self._logger.info(
-            "Runtime bootstrapped. mode=%s execution=%s strategy=%s symbol=%s baseline_balance=%s",
+            "Runtime bootstrapped. mode=%s execution=%s strategy=%s symbol=%s "
+            "confidence=%.3f (source=%s) baseline_balance=%s",
             self._config.exchange.environment.value,
             "dry-run" if self._config.runtime.dry_run_mode else "live-orders",
             self._config.strategy.strategy_mode.value,
             self._config.exchange.symbol,
+            self._config.strategy.confidence_threshold,
+            confidence_source,
             self._risk_manager.starting_balance,
         )
         self._notifier.register_status_callback(self._get_bot_status)
