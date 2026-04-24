@@ -1013,6 +1013,83 @@ def test_load_app_config_bot_id_can_be_set_explicitly(tmp_path: Path) -> None:
     assert config.storage.bot_id == "sentinel-01"
 
 
+def _clear_confidence_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`load_dotenv_if_present` uses os.environ.setdefault, so prior tests leave
+    SIGNAL_CONFIDENCE / SIGNAL_CONFIDENCE_OVERRIDE lingering in the process env.
+    These tests need a clean slate for each confidence-resolution case."""
+    monkeypatch.delenv("SIGNAL_CONFIDENCE", raising=False)
+    monkeypatch.delenv("SIGNAL_CONFIDENCE_OVERRIDE", raising=False)
+
+
+def test_load_app_config_uses_signal_confidence_when_no_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_confidence_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, SIGNAL_CONFIDENCE="0.51")
+
+    config = load_app_config(env_path)
+
+    assert config.strategy.confidence_threshold == pytest.approx(0.51)
+
+
+def test_load_app_config_override_takes_precedence_over_signal_confidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_confidence_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        SIGNAL_CONFIDENCE="0.51",
+        SIGNAL_CONFIDENCE_OVERRIDE="0.30",
+    )
+
+    config = load_app_config(env_path)
+
+    assert config.strategy.confidence_threshold == pytest.approx(0.30)
+
+
+def test_load_app_config_empty_override_falls_back_to_signal_confidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_confidence_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        SIGNAL_CONFIDENCE="0.45",
+        SIGNAL_CONFIDENCE_OVERRIDE="",
+    )
+
+    config = load_app_config(env_path)
+
+    assert config.strategy.confidence_threshold == pytest.approx(0.45)
+
+
+def test_load_app_config_rejects_invalid_signal_confidence_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.errors import ConfigError
+
+    _clear_confidence_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        SIGNAL_CONFIDENCE_OVERRIDE="not-a-number",
+    )
+    with pytest.raises(ConfigError, match="SIGNAL_CONFIDENCE_OVERRIDE"):
+        load_app_config(env_path)
+
+
+def test_load_app_config_rejects_out_of_range_signal_confidence_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.errors import ConfigError
+
+    _clear_confidence_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        SIGNAL_CONFIDENCE_OVERRIDE="1.5",
+    )
+    with pytest.raises(ConfigError, match="SIGNAL_CONFIDENCE_OVERRIDE"):
+        load_app_config(env_path)
+
+
 def test_get_bot_status_returns_expected_shape_after_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

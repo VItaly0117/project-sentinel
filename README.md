@@ -156,6 +156,32 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
   - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
 
+### XGBoost confidence override (opt-in)
+
+The XGB path keeps its spec-default `SIGNAL_CONFIDENCE=0.51`. For demo conditions where the model's Buy/Sell class probabilities rarely cross that gate, an opt-in override can lower the threshold without silently changing the global default.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `SIGNAL_CONFIDENCE` | `0.51` | Spec threshold. Unchanged. |
+| `SIGNAL_CONFIDENCE_OVERRIDE` | _(unset)_ | When set (0.0–1.0), takes precedence over `SIGNAL_CONFIDENCE`. Empty string = unset. |
+
+In the shipped `docker-compose.yml`, `btc-bot` sets `SIGNAL_CONFIDENCE_OVERRIDE=${BTC_SIGNAL_CONFIDENCE:-0.30}`. To adjust or disable:
+
+```bash
+# Tune btc-bot threshold
+BTC_SIGNAL_CONFIDENCE=0.25 docker compose up -d btc-bot
+
+# Disable override, restore spec default
+BTC_SIGNAL_CONFIDENCE= docker compose up -d btc-bot
+```
+
+Runtime bootstrap logs the active threshold and its source:
+```
+Runtime bootstrapped. … confidence=0.300 (source=override) baseline_balance=1000
+```
+
+Risk manager, reconciliation, TP/SL, dry-run gating, notifications, and the model itself remain untouched — only the one threshold value moves.
+
 ### Zscore tuning profiles (opt-in)
 
 The zscore engine keeps **spec-accurate defaults**; nothing changes unless you opt in.
