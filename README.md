@@ -230,6 +230,75 @@ In the shipped compose, `btc-bot` polls commands (`TELEGRAM_COMMAND_POLLING_ENAB
 BTC_TELEGRAM_COMMAND_POLLING=false ETH_TELEGRAM_COMMAND_POLLING=true docker compose up -d
 ```
 
+## Demo smoke order (one-off)
+
+One-off operator tool to prove the Bybit **demo** order path end-to-end, independent of strategy signals. Not invoked during normal bot operation.
+
+**Hard safety guards** — the tool refuses to run unless all are true:
+
+| Guard | Required value |
+|---|---|
+| `--demo-smoke-order` | passed |
+| `--confirm-demo-order` | passed |
+| `EXCHANGE_ENV` | `demo` |
+| `ALLOW_LIVE_MODE` | `false` |
+| `DRY_RUN_MODE` | `false` (so the order actually hits the exchange) |
+| `qty` | `0 < qty <= SMOKE_MAX_QTY` (default `0.01`) |
+
+**Smallest invocation** (defaults: `--side Buy`, qty from `ORDER_QTY`, auto-close after 3 s):
+
+```bash
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order
+```
+
+**Other options:**
+
+```bash
+# Pick side and qty explicitly
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --side Sell --qty 0.001
+
+# Open, don't close (operator inspects/closes manually)
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --no-close
+
+# Close whatever position is open on the configured symbol
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --close-only
+
+# Raise the max qty if you really mean it
+SMOKE_MAX_QTY=0.05 python3 sentineltest.py --demo-smoke-order --confirm-demo-order --qty 0.02
+```
+
+**Exit codes:**
+
+| Exit | Meaning |
+|---|---|
+| `0` | Demo order opened and closed cleanly. Demo path works. |
+| `1` | Config error (bad `.env` / missing creds). |
+| `2` | Guard refused (one of the conditions above failed). |
+| `3` | Exchange rejected the order (see error message). |
+| `4` | Unexpected internal error. |
+| `5` | Order flow completed but verification (position count / balance) did not match expectations. |
+
+**What a successful run looks like** (final log lines):
+
+```
+DEMO SMOKE ORDER RESULT
+  opened=True  open_order_id=...
+  closed=True  close_order_id=...
+  side=Buy qty=0.001
+  balance_before=... balance_after=...
+  positions_before=0 positions_after=0
+SMOKE ORDER: PASS — demo order path is working.
+```
+
+**What a failed run looks like**: exit 3 with the exact Bybit error, e.g.
+
+```
+Exchange rejected the smoke order: place_order failed after 3 attempts:
+position idx not match position mode (ErrCode: 10001)
+```
+
+That error specifically means the Bybit account is in One-Way mode while the code emits Hedge-mode `positionIdx=1/2`. Fix: switch the Bybit demo account to Hedge mode (or patch `exchange.py` to emit `positionIdx=0` in One-Way — separate follow-up).
+
 ## Deploy helpers
 
 One-command operator scripts for local and VPS bring-up:
