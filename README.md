@@ -156,6 +156,37 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
   - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
 
+### Zscore tuning profiles (opt-in)
+
+The zscore engine keeps **spec-accurate defaults**; nothing changes unless you opt in.
+
+| Env var | Values | Effect |
+|---|---|---|
+| `ZSCORE_PROFILE` | `default` (implicit), `demo_relaxed` | Picks a named preset as the base for all gates. |
+| `ZSCORE_ENTRY_LONG` | float (e.g. `-1.8`) | Overrides the long z-score threshold. |
+| `ZSCORE_ENTRY_SHORT` | float (e.g. `1.8`) | Overrides the short z-score threshold. |
+| `ZSCORE_RSI_LONG_MAX` | float (e.g. `40`) | Overrides the max-RSI gate for long entries. |
+| `ZSCORE_RSI_SHORT_MIN` | float (e.g. `60`) | Overrides the min-RSI gate for short entries. |
+| `ZSCORE_ATR_PCT_MIN` | float (e.g. `0.0010`) | Overrides the lower ATR/close band. |
+| `ZSCORE_ATR_PCT_MAX` | float (e.g. `0.0250`) | Overrides the upper ATR/close band. |
+| `ZSCORE_VOLUME_MIN` | float (e.g. `-1.0`) | Overrides the minimum volume z-score. |
+
+**`demo_relaxed` preset** (for controlled demo runs when the spec defaults rarely fire in a short window):
+
+| Gate | default | demo_relaxed |
+|---|---|---|
+| `zscore_entry_long` | -2.1 | **-1.8** |
+| `zscore_entry_short` | 2.1 | **1.8** |
+| `rsi_long_max` | 32 | **40** |
+| `rsi_short_min` | 68 | **60** |
+| `atr_pct_min` | 0.0025 | **0.0010** |
+| `atr_pct_max` | 0.0180 | **0.0250** |
+| `volume_zscore_min` | -0.5 | **-1.0** |
+
+TP/SL, risk limits, dry-run gating, reconciliation, and notifications are unaffected by the profile — only the *entry* gates move.
+
+In the shipped `docker-compose.yml`, `btc-bot` is the **control path** on XGB and `eth-bot` runs the zscore engine with `ZSCORE_PROFILE=demo_relaxed`. Override with `BTC_STRATEGY_MODE`, `ETH_STRATEGY_MODE`, `ZSCORE_PROFILE`, or any individual `ZSCORE_*` env var in `.env`.
+
 ## Deploy helpers
 
 One-command operator scripts for local and VPS bring-up:

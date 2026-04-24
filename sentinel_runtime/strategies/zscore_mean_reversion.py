@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 import numpy as np
 import pandas as pd
 
+from ..errors import ConfigError
 from ..models import SignalDecision
 
 
@@ -36,6 +38,80 @@ class ZscoreMeanReversionParams:
             )
             + self.history_safety_buffer
         )
+
+
+# ---------------------------------------------------------------------------
+# Opt-in demo-tuning profiles and env overrides.
+#
+# The default profile is the spec-accurate `ZscoreMeanReversionParams()` above
+# and is NOT changed. `demo_relaxed` is a strictly opt-in preset that loosens
+# the entry gates for controlled demo runs on a quiet exchange regime (Bybit
+# testnet/demo ETHUSDT 5m), where the default thresholds rarely fire within a
+# short demo window. It only affects *entry* — TP/SL, risk limits, dry-run
+# gating, reconciliation, and notifications all remain untouched.
+# ---------------------------------------------------------------------------
+
+DEMO_RELAXED_PARAMS = ZscoreMeanReversionParams(
+    zscore_entry_long=-1.8,
+    zscore_entry_short=1.8,
+    rsi_long_max=40.0,
+    rsi_short_min=60.0,
+    atr_pct_min=0.0010,
+    atr_pct_max=0.0250,
+    volume_zscore_min=-1.0,
+)
+
+_PROFILES: dict[str, ZscoreMeanReversionParams] = {
+    "default": ZscoreMeanReversionParams(),
+    "demo_relaxed": DEMO_RELAXED_PARAMS,
+}
+
+
+# env var name -> (param field, parser)
+_ENV_OVERRIDES: dict[str, tuple[str, type]] = {
+    "ZSCORE_ENTRY_LONG": ("zscore_entry_long", float),
+    "ZSCORE_ENTRY_SHORT": ("zscore_entry_short", float),
+    "ZSCORE_RSI_LONG_MAX": ("rsi_long_max", float),
+    "ZSCORE_RSI_SHORT_MIN": ("rsi_short_min", float),
+    "ZSCORE_ATR_PCT_MIN": ("atr_pct_min", float),
+    "ZSCORE_ATR_PCT_MAX": ("atr_pct_max", float),
+    "ZSCORE_VOLUME_MIN": ("volume_zscore_min", float),
+}
+
+
+def params_from_env() -> ZscoreMeanReversionParams:
+    """Build params from env vars.
+
+    Two-tier resolution:
+      1. `ZSCORE_PROFILE` picks a base preset. Defaults to `default` (spec values).
+         Valid: `default`, `demo_relaxed`.
+      2. Individual overrides (see `_ENV_OVERRIDES`) mutate the base on a
+         per-field basis. Absent env vars leave the base unchanged.
+
+    Unknown profile names raise `ConfigError` so typos fail loudly instead of
+    silently selecting `default`.
+    """
+    profile_name = os.environ.get("ZSCORE_PROFILE", "default").strip().lower() or "default"
+    base = _PROFILES.get(profile_name)
+    if base is None:
+        valid = ", ".join(sorted(_PROFILES))
+        raise ConfigError(
+            f"Unknown ZSCORE_PROFILE value: {profile_name!r}. Valid: {valid}."
+        )
+
+    overrides: dict[str, float | int] = {}
+    for env_name, (field_name, parser) in _ENV_OVERRIDES.items():
+        raw = os.environ.get(env_name)
+        if raw is None or raw.strip() == "":
+            continue
+        try:
+            overrides[field_name] = parser(raw)
+        except ValueError as exc:
+            raise ConfigError(
+                f"Invalid value for {env_name}: {raw!r} (expected {parser.__name__})."
+            ) from exc
+
+    return replace(base, **overrides) if overrides else base
 
 
 def compute_rolling_zscore(closes: np.ndarray, window: int) -> float:

@@ -56,8 +56,12 @@ class TradingRuntime:
         self._notifier = notifier_cls(config.notifications)
         self._risk_manager = risk_manager_cls(config.risk)
         if config.strategy.strategy_mode == StrategyMode.ZSCORE_MEAN_REVERSION_V1:
-            from .strategies.zscore_mean_reversion import ZscoreMeanReversionEngine
-            self._signal_engine = ZscoreMeanReversionEngine()
+            from .strategies.zscore_mean_reversion import (
+                ZscoreMeanReversionEngine,
+                params_from_env,
+            )
+            zscore_params = params_from_env()
+            self._signal_engine = ZscoreMeanReversionEngine(zscore_params)
         else:
             self._signal_engine = signal_engine_cls(
                 model_path=config.strategy.model_path,

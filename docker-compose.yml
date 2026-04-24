@@ -49,6 +49,8 @@ services:
     restart: unless-stopped
     <<: *default-logging
 
+  # Control path: BTC stays on the XGBoost model with spec-default thresholds.
+  # Override via .env if you want a different strategy for BTC.
   btc-bot:
     build: .
     depends_on:
@@ -59,6 +61,7 @@ services:
       DATABASE_SCHEMA: btcusdt
       BYBIT_SYMBOL: BTCUSDT
       BOT_ID: btcusdt
+      STRATEGY_MODE: ${BTC_STRATEGY_MODE:-xgb}
       RUNTIME_DB_PATH: /tmp/btc_runtime.db
     env_file:
       - path: .env
@@ -72,6 +75,11 @@ services:
       start_period: 30s
     <<: *default-logging
 
+  # Demo-tuned path: ETH runs the deterministic zscore engine on the opt-in
+  # `demo_relaxed` profile so entries are more likely during a short demo
+  # window. TP/SL, risk limits, reconciliation, and dry-run gating are
+  # unchanged. Override via BTC_STRATEGY_MODE / ETH_STRATEGY_MODE / ZSCORE_*
+  # env vars if you need finer control.
   eth-bot:
     build: .
     depends_on:
@@ -82,6 +90,8 @@ services:
       DATABASE_SCHEMA: ethusdt
       BYBIT_SYMBOL: ETHUSDT
       BOT_ID: ethusdt
+      STRATEGY_MODE: ${ETH_STRATEGY_MODE:-zscore_mean_reversion_v1}
+      ZSCORE_PROFILE: ${ZSCORE_PROFILE:-demo_relaxed}
       RUNTIME_DB_PATH: /tmp/eth_runtime.db
     env_file:
       - path: .env

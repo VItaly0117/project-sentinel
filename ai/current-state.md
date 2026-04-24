@@ -155,7 +155,18 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - `docs/vps-deployment.md` updated with shortcut callouts pointing to the new scripts.
 - `README.md` updated with a "Deploy helpers" table.
 
+## Zscore demo-tuning profiles (2026-04-24)
+- `sentinel_runtime/strategies/zscore_mean_reversion.py` gained an opt-in `params_from_env()` factory.
+- `ZSCORE_PROFILE` env var selects a preset: `default` (spec values, unchanged) or `demo_relaxed` (permissive preset for demo runs).
+- Individual env overrides layer on top: `ZSCORE_ENTRY_LONG`, `ZSCORE_ENTRY_SHORT`, `ZSCORE_RSI_LONG_MAX`, `ZSCORE_RSI_SHORT_MIN`, `ZSCORE_ATR_PCT_MIN`, `ZSCORE_ATR_PCT_MAX`, `ZSCORE_VOLUME_MIN`.
+- `demo_relaxed` values: entry z ±1.8 (was ±2.1), RSI 40/60 (was 32/68), ATR band 0.0010–0.0250 (was 0.0025–0.018), volume_zscore_min -1.0 (was -0.5).
+- `runtime.py` calls `params_from_env()` when `STRATEGY_MODE=zscore_mean_reversion_v1`; all other code paths unchanged.
+- `docker-compose.yml` now makes strategy selection explicit per bot: `btc-bot` uses `xgb` (control), `eth-bot` uses `zscore_mean_reversion_v1` with `ZSCORE_PROFILE=demo_relaxed`. Both overridable via `BTC_STRATEGY_MODE` / `ETH_STRATEGY_MODE` / `ZSCORE_PROFILE`.
+- Risk manager, reconciliation, dry-run gating, TP/SL, notifications, persistence: untouched.
+- Tests: 79/79 passed (6 new around `params_from_env`, including a regression test on the exact candle that failed the previous demo run).
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
 - Start the API server alongside the runtime to verify the dashboard reads live data.
+- Launch `docker compose up --build -d` and watch `eth-bot` logs for `Strategy=zscore_mean_reversion_v1 … action=Buy|Sell` within a reasonable demo window.
