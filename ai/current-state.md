@@ -191,6 +191,20 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - 14 focused guard tests + 1 dispatch test in `tests/test_smoke_order.py`. Full suite: 104/104 passed.
 - **Proven finding from first run against Bybit demo**: account is in One-Way mode but `exchange.place_market_order` hardcodes `positionIdx=1/2` (Hedge mode). API returns `ErrCode: 10001 position idx not match position mode`. This is the exact reason live-orders mode never fills, independent of strategy output.
 
+## Bybit position-mode fix (2026-04-24)
+- New env var `BYBIT_POSITION_MODE=one_way|hedge`, default `hedge` (preserves prior behaviour).
+- New `PositionMode` enum and `ExchangeConfig.position_mode` field parsed in `load_app_config` with validation.
+- New private helper `BybitExchangeClient._position_idx_for_side(side)`:
+  - `one_way` → always `0`.
+  - `hedge` → `1` for Buy (long slot), `2` for Sell (short slot).
+- Both `place_market_order` and `close_position_market` now call the helper. Smoke-order tool inherits the fix automatically — no changes to `smoke_order.py`.
+- Eight new focused tests in `tests/test_runtime_mvp.py`:
+  - 4 config parsing tests (default, explicit one_way, uppercase, invalid).
+  - 4 adapter tests using a `_RecordingSession` mock to assert exact `positionIdx` values on open and close, for both modes.
+- Full suite: 112/112 passed.
+- Resolves ErrCode 10001 for Bybit demo accounts running in One-Way mode — set `BYBIT_POSITION_MODE=one_way` in `.env`, no code changes required.
+- Stacked on top of PR #16 (smoke-order tool).
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

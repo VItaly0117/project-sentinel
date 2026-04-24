@@ -20,6 +20,19 @@ class StrategyMode(str, Enum):
     ZSCORE_MEAN_REVERSION_V1 = "zscore_mean_reversion_v1"
 
 
+class PositionMode(str, Enum):
+    """Bybit position mode.
+
+    one_way: single position slot per symbol, positionIdx=0 for both sides.
+    hedge:   dual slots — positionIdx=1 for long (Buy), positionIdx=2 for short (Sell).
+    Must match the setting on the Bybit account UI. Mismatch → API ErrCode 10001
+    ("position idx not match position mode").
+    """
+
+    ONE_WAY = "one_way"
+    HEDGE = "hedge"
+
+
 @dataclass(frozen=True)
 class ExchangeConfig:
     api_key: str
@@ -32,6 +45,7 @@ class ExchangeConfig:
     interval_minutes: int
     kline_limit: int
     closed_pnl_limit: int
+    position_mode: PositionMode = PositionMode.HEDGE
 
 
 @dataclass(frozen=True)
@@ -137,6 +151,16 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
     if not db_path.is_absolute():
         db_path = (Path.cwd() / db_path).resolve()
 
+    raw_position_mode = _read_env("BYBIT_POSITION_MODE", PositionMode.HEDGE.value).lower()
+    try:
+        position_mode = PositionMode(raw_position_mode)
+    except ValueError as exc:
+        valid = ", ".join(mode.value for mode in PositionMode)
+        raise ConfigError(
+            f"Unsupported BYBIT_POSITION_MODE value: {raw_position_mode!r}. "
+            f"Valid: {valid}."
+        ) from exc
+
     exchange = ExchangeConfig(
         api_key=_read_env("BYBIT_API_KEY", required=True),
         api_secret=_read_env("BYBIT_API_SECRET", required=True),
@@ -148,6 +172,7 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         interval_minutes=_parse_int("BYBIT_INTERVAL_MINUTES", 5, minimum=1),
         kline_limit=_parse_int("BYBIT_KLINE_LIMIT", 350, minimum=50),
         closed_pnl_limit=_parse_int("BYBIT_CLOSED_PNL_LIMIT", 100, minimum=1),
+        position_mode=position_mode,
     )
     # SIGNAL_CONFIDENCE_OVERRIDE is an opt-in demo knob. When set, it takes
     # precedence over SIGNAL_CONFIDENCE (which keeps its spec default of 0.51).

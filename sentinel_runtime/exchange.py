@@ -10,7 +10,7 @@ from typing import Any, Callable
 import pandas as pd
 from pybit.unified_trading import HTTP
 
-from .config import CircuitBreakerConfig, ExchangeConfig, ExchangeEnvironment, StrategyConfig
+from .config import CircuitBreakerConfig, ExchangeConfig, ExchangeEnvironment, PositionMode, StrategyConfig
 from .errors import CircuitBreakerOpen, ExchangeClientError
 from .models import BalanceSnapshot, ClosedTradeReport, ExchangeExposureSnapshot, OrderSide, PlacedOrder
 
@@ -200,7 +200,7 @@ class BybitExchangeClient:
 
     def place_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
         order_template = self._build_order_template(side, entry_price)
-        position_index = 1 if side == "Buy" else 2
+        position_index = self._position_idx_for_side(side)
         response = self._call(
             "place_order",
             lambda: self._session.place_order(
@@ -234,11 +234,13 @@ class BybitExchangeClient:
         """Reduce-only market order that closes an existing position.
 
         Used ONLY by the demo smoke-order tool (`sentineltest.py --demo-smoke-order`).
-        Not invoked by the main trading loop. Assumes Hedge mode (same positionIdx
-        slot as the original open, opposite side, reduceOnly=True).
+        Not invoked by the main trading loop. Honours `BYBIT_POSITION_MODE`:
+          - one_way: positionIdx=0, opposite side with reduceOnly=True.
+          - hedge:   same positionIdx slot as the original open (1=long, 2=short),
+                     opposite side with reduceOnly=True.
         """
         opposite: OrderSide = "Sell" if side_to_close == "Buy" else "Buy"
-        position_index = 1 if side_to_close == "Buy" else 2
+        position_index = self._position_idx_for_side(side_to_close)
         response = self._call(
             "close_position_market",
             lambda: self._session.place_order(
@@ -368,6 +370,18 @@ class BybitExchangeClient:
         raise ExchangeClientError(
             f"{operation_name} failed after {self._circuit_breaker_config.max_retries} attempts: {last_error}"
         )
+
+    def _position_idx_for_side(self, side: OrderSide) -> int:
+        """Map (position_mode, side) to Bybit's positionIdx.
+
+        one_way: single slot → always 0.
+        hedge:   1 for long (Buy), 2 for short (Sell).
+        Mismatch with the Bybit account's position-mode setting causes
+        ErrCode 10001 ("position idx not match position mode") on every order.
+        """
+        if self._exchange_config.position_mode is PositionMode.ONE_WAY:
+            return 0
+        return 1 if side == "Buy" else 2
 
     @staticmethod
     def _extract_decimal(

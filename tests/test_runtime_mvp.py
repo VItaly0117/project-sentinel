@@ -1091,6 +1091,175 @@ def test_load_app_config_rejects_out_of_range_signal_confidence_override(
 
 
 # ---------------------------------------------------------------------------
+# BYBIT_POSITION_MODE — position-mode config + positionIdx resolution
+# ---------------------------------------------------------------------------
+
+
+def _clear_position_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BYBIT_POSITION_MODE", raising=False)
+
+
+def test_load_app_config_position_mode_defaults_to_hedge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.config import PositionMode
+
+    _clear_position_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path)
+    config = load_app_config(env_path)
+
+    assert config.exchange.position_mode is PositionMode.HEDGE
+
+
+def test_load_app_config_position_mode_parses_one_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.config import PositionMode
+
+    _clear_position_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, BYBIT_POSITION_MODE="one_way")
+    config = load_app_config(env_path)
+
+    assert config.exchange.position_mode is PositionMode.ONE_WAY
+
+
+def test_load_app_config_position_mode_accepts_uppercase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.config import PositionMode
+
+    _clear_position_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, BYBIT_POSITION_MODE="ONE_WAY")
+    config = load_app_config(env_path)
+
+    assert config.exchange.position_mode is PositionMode.ONE_WAY
+
+
+def test_load_app_config_rejects_invalid_position_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.errors import ConfigError
+
+    _clear_position_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, BYBIT_POSITION_MODE="nonsense")
+    with pytest.raises(ConfigError, match="BYBIT_POSITION_MODE"):
+        load_app_config(env_path)
+
+
+# ---------------------------------------------------------------------------
+# Exchange adapter — positionIdx wiring for place_market_order and
+# close_position_market. We mock the Bybit HTTP session and assert the kwargs.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSession:
+    """Minimal stand-in for pybit.HTTP used to capture place_order kwargs."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def place_order(self, **kwargs):  # noqa: ANN003
+        self.calls.append(kwargs)
+        return {"result": {"orderId": f"order-{len(self.calls)}"}}
+
+
+def _make_recording_exchange_client(position_mode_value: str):
+    from sentinel_runtime.config import (
+        CircuitBreakerConfig,
+        ExchangeConfig,
+        ExchangeEnvironment,
+        PositionMode,
+        StrategyConfig,
+        StrategyMode,
+    )
+    from sentinel_runtime.exchange import BybitExchangeClient
+
+    exchange_config = ExchangeConfig(
+        api_key="k",
+        api_secret="s",
+        environment=ExchangeEnvironment.DEMO,
+        symbol="BTCUSDT",
+        category="linear",
+        account_type="UNIFIED",
+        settle_coin="USDT",
+        interval_minutes=5,
+        kline_limit=350,
+        closed_pnl_limit=100,
+        position_mode=PositionMode(position_mode_value),
+    )
+    strategy_config = StrategyConfig(
+        model_path=Path("/tmp/model.json"),
+        order_qty=Decimal("0.001"),
+        confidence_threshold=0.51,
+        tp_pct=Decimal("0.012"),
+        sl_pct=Decimal("0.006"),
+        price_decimals=2,
+        strategy_mode=StrategyMode.XGB,
+    )
+    circuit_breaker_config = CircuitBreakerConfig(
+        api_error_threshold=5,
+        error_window_seconds=60,
+        cooldown_seconds=300,
+        max_retries=3,
+        backoff_seconds=2.0,
+    )
+    client = BybitExchangeClient(
+        exchange_config=exchange_config,
+        strategy_config=strategy_config,
+        circuit_breaker_config=circuit_breaker_config,
+    )
+    # Replace the pybit HTTP session with our recorder.
+    recorder = _RecordingSession()
+    client._session = recorder  # noqa: SLF001
+    return client, recorder
+
+
+def test_position_idx_is_zero_in_one_way_mode_for_place_market_order() -> None:
+    client, recorder = _make_recording_exchange_client("one_way")
+    client.place_market_order("Buy", Decimal("100"))
+    client.place_market_order("Sell", Decimal("100"))
+
+    assert len(recorder.calls) == 2
+    assert recorder.calls[0]["positionIdx"] == 0
+    assert recorder.calls[1]["positionIdx"] == 0
+    assert recorder.calls[0]["side"] == "Buy"
+    assert recorder.calls[1]["side"] == "Sell"
+
+
+def test_position_idx_matches_side_in_hedge_mode_for_place_market_order() -> None:
+    client, recorder = _make_recording_exchange_client("hedge")
+    client.place_market_order("Buy", Decimal("100"))
+    client.place_market_order("Sell", Decimal("100"))
+
+    assert recorder.calls[0]["positionIdx"] == 1  # long slot
+    assert recorder.calls[1]["positionIdx"] == 2  # short slot
+
+
+def test_position_idx_is_zero_in_one_way_mode_for_close_position_market() -> None:
+    client, recorder = _make_recording_exchange_client("one_way")
+    client.close_position_market("Buy", Decimal("0.001"))
+    client.close_position_market("Sell", Decimal("0.001"))
+
+    assert recorder.calls[0]["positionIdx"] == 0
+    assert recorder.calls[0]["side"] == "Sell"  # opposite of Buy
+    assert recorder.calls[0]["reduceOnly"] is True
+    assert recorder.calls[1]["positionIdx"] == 0
+    assert recorder.calls[1]["side"] == "Buy"  # opposite of Sell
+    assert recorder.calls[1]["reduceOnly"] is True
+
+
+def test_position_idx_matches_original_slot_in_hedge_close_position_market() -> None:
+    client, recorder = _make_recording_exchange_client("hedge")
+    client.close_position_market("Buy", Decimal("0.001"))  # close long
+    client.close_position_market("Sell", Decimal("0.001"))  # close short
+
+    assert recorder.calls[0]["positionIdx"] == 1  # same slot as long
+    assert recorder.calls[0]["side"] == "Sell"
+    assert recorder.calls[1]["positionIdx"] == 2  # same slot as short
+    assert recorder.calls[1]["side"] == "Buy"
+
+
+# ---------------------------------------------------------------------------
 # TELEGRAM_COMMAND_POLLING_ENABLED — inbound getUpdates gate
 # ---------------------------------------------------------------------------
 
