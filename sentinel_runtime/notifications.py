@@ -38,9 +38,23 @@ class TelegramNotifier:
         self._status_callback = callback
 
     def start_command_listener(self) -> None:
-        """Start the background polling thread. No-op if Telegram is not configured."""
+        """Start the background polling thread.
+
+        No-op when either:
+          - Telegram is not configured (no token / chat id), or
+          - command polling is explicitly disabled via TELEGRAM_COMMAND_POLLING_ENABLED=false.
+
+        Outbound alerts (send_*) are unaffected either way — they use
+        sendMessage, not getUpdates, and do not race across instances.
+        """
         if not self._config.enabled:
             self._logger.debug("Telegram not configured — command listener disabled.")
+            return
+        if not self._config.command_polling_enabled:
+            self._logger.info(
+                "Telegram command polling disabled by config — alerts still enabled, "
+                "/status and /help will not be handled by this instance."
+            )
             return
         self._stop_event.clear()
         self._polling_thread = threading.Thread(

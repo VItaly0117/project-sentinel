@@ -1090,6 +1090,136 @@ def test_load_app_config_rejects_out_of_range_signal_confidence_override(
         load_app_config(env_path)
 
 
+# ---------------------------------------------------------------------------
+# TELEGRAM_COMMAND_POLLING_ENABLED — inbound getUpdates gate
+# ---------------------------------------------------------------------------
+
+
+def _clear_telegram_polling_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TELEGRAM_COMMAND_POLLING_ENABLED", raising=False)
+
+
+def test_load_app_config_command_polling_defaults_to_true(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_telegram_polling_env(monkeypatch)
+    env_path = _write_env_file(tmp_path)
+    config = load_app_config(env_path)
+    assert config.notifications.command_polling_enabled is True
+
+
+def test_load_app_config_command_polling_can_be_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_telegram_polling_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, TELEGRAM_COMMAND_POLLING_ENABLED="false")
+    config = load_app_config(env_path)
+    assert config.notifications.command_polling_enabled is False
+
+
+def test_load_app_config_command_polling_accepts_truthy_strings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_telegram_polling_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, TELEGRAM_COMMAND_POLLING_ENABLED="yes")
+    config = load_app_config(env_path)
+    assert config.notifications.command_polling_enabled is True
+
+
+def test_telegram_notifier_skips_polling_thread_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The polling thread must not be started when polling is disabled,
+    even if the token/chat are configured for alerts."""
+    from sentinel_runtime.notifications import TelegramNotifier
+
+    notifier = TelegramNotifier(
+        NotificationConfig(
+            telegram_bot_token="test-token",
+            telegram_chat_id="test-chat",
+            command_polling_enabled=False,
+        )
+    )
+    # Ensure no one can accidentally talk to Telegram during this test.
+    monkeypatch.setattr(notifier._session, "get", _fail_if_called)
+    monkeypatch.setattr(notifier._session, "post", _fail_if_called)
+
+    notifier.start_command_listener()
+
+    assert notifier._polling_thread is None
+
+
+def test_telegram_notifier_outbound_alert_works_when_polling_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polling off must not disable sendMessage — alerts still fire."""
+    from sentinel_runtime.notifications import TelegramNotifier
+
+    notifier = TelegramNotifier(
+        NotificationConfig(
+            telegram_bot_token="test-token",
+            telegram_chat_id="test-chat",
+            command_polling_enabled=False,
+        )
+    )
+    calls: list[dict] = []
+
+    class _FakeResp:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_post(url: str, data=None, timeout=None):  # noqa: ANN001
+        calls.append({"url": url, "data": data})
+        return _FakeResp()
+
+    monkeypatch.setattr(notifier._session, "post", _fake_post)
+    monkeypatch.setattr(notifier._session, "get", _fail_if_called)
+
+    notifier.start_command_listener()  # must stay a no-op
+    notifier.send_message("hello")
+
+    assert notifier._polling_thread is None
+    assert len(calls) == 1
+    assert calls[0]["url"].endswith("/sendMessage")
+    assert calls[0]["data"]["chat_id"] == "test-chat"
+    assert calls[0]["data"]["text"] == "hello"
+
+
+def test_telegram_notifier_starts_polling_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backward-compat check: when polling is enabled (default), the thread starts."""
+    from sentinel_runtime.notifications import TelegramNotifier
+
+    notifier = TelegramNotifier(
+        NotificationConfig(
+            telegram_bot_token="test-token",
+            telegram_chat_id="test-chat",
+            command_polling_enabled=True,
+        )
+    )
+    # Immediately signal the thread to stop so the daemon doesn't hit the network.
+    monkeypatch.setattr(notifier, "_fetch_and_dispatch", lambda: notifier._stop_event.set())
+
+    notifier.start_command_listener()
+
+    try:
+        assert notifier._polling_thread is not None
+        assert notifier._polling_thread.is_alive() or notifier._stop_event.is_set()
+    finally:
+        notifier.stop_command_listener()
+        if notifier._polling_thread is not None:
+            notifier._polling_thread.join(timeout=1.0)
+
+
+def _fail_if_called(*args, **kwargs):  # noqa: ANN001, ANN002
+    raise AssertionError(
+        f"Telegram HTTP call not expected in this test: args={args} kwargs={kwargs}"
+    )
+
+
 def test_get_bot_status_returns_expected_shape_after_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

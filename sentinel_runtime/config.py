@@ -84,6 +84,11 @@ class CircuitBreakerConfig:
 class NotificationConfig:
     telegram_bot_token: str | None
     telegram_chat_id: str | None
+    # Outbound sendMessage alerts always fire when `enabled` is True.
+    # command_polling_enabled gates the inbound getUpdates long-poll thread
+    # separately, so multiple bots sharing a single token can all send alerts
+    # without two of them racing for getUpdates and hitting HTTP 409 Conflict.
+    command_polling_enabled: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -198,6 +203,7 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
     notifications = NotificationConfig(
         telegram_bot_token=_read_optional_env("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_read_optional_env("TELEGRAM_CHAT_ID"),
+        command_polling_enabled=_parse_bool("TELEGRAM_COMMAND_POLLING_ENABLED", True),
     )
 
     return AppConfig(
