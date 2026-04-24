@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -558,8 +559,13 @@ def configure_logging(level: str) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    if "--demo-smoke-order" in effective_argv:
+        from .smoke_order import smoke_main
+        return smoke_main(effective_argv)
+
     parser = build_preflight_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     configure_logging("INFO")
     if args.preflight:
         try:

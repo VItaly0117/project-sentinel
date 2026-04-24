@@ -182,6 +182,15 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - Six new tests in `tests/test_runtime_mvp.py` covering: default true, explicit false, truthy-string parsing, polling-disabled skips thread, alerts still work when polling disabled, polling-enabled starts thread.
 - Tests: 90/90 passed.
 
+## Demo smoke order tool (2026-04-24)
+- New module `sentinel_runtime/smoke_order.py` — operator-invoked one-off tool that places a tiny market order on Bybit DEMO, optionally closes it, and prints a clear pass/fail outcome. Isolated from the main trading loop.
+- Hard guards: `--demo-smoke-order` + `--confirm-demo-order` + `EXCHANGE_ENV=demo` + `ALLOW_LIVE_MODE=false` + `DRY_RUN_MODE=false` + `0 < qty <= SMOKE_MAX_QTY` (default 0.01).
+- New helper `BybitExchangeClient.close_position_market(side, qty)` — reduce-only opposite-side market order, used only by the smoke tool.
+- Dispatch: `runtime.main()` detects `--demo-smoke-order` in argv and forwards to `smoke_order.smoke_main`. Existing preflight and `run_forever` paths untouched.
+- Exit codes: 0 pass, 1 config, 2 guard refusal, 3 exchange rejection, 4 internal, 5 verification mismatch.
+- 14 focused guard tests + 1 dispatch test in `tests/test_smoke_order.py`. Full suite: 104/104 passed.
+- **Proven finding from first run against Bybit demo**: account is in One-Way mode but `exchange.place_market_order` hardcodes `positionIdx=1/2` (Hedge mode). API returns `ErrCode: 10001 position idx not match position mode`. This is the exact reason live-orders mode never fills, independent of strategy output.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

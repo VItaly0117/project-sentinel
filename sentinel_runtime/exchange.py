@@ -226,6 +226,41 @@ class BybitExchangeClient:
             stop_loss=order_template.stop_loss,
         )
 
+    def close_position_market(
+        self,
+        side_to_close: OrderSide,
+        qty: Decimal,
+    ) -> PlacedOrder:
+        """Reduce-only market order that closes an existing position.
+
+        Used ONLY by the demo smoke-order tool (`sentineltest.py --demo-smoke-order`).
+        Not invoked by the main trading loop. Assumes Hedge mode (same positionIdx
+        slot as the original open, opposite side, reduceOnly=True).
+        """
+        opposite: OrderSide = "Sell" if side_to_close == "Buy" else "Buy"
+        position_index = 1 if side_to_close == "Buy" else 2
+        response = self._call(
+            "close_position_market",
+            lambda: self._session.place_order(
+                category=self._exchange_config.category,
+                symbol=self._exchange_config.symbol,
+                side=opposite,
+                orderType="Market",
+                qty=str(qty),
+                reduceOnly=True,
+                positionIdx=position_index,
+            ),
+        )
+        order_result = response.get("result", {})
+        return PlacedOrder(
+            order_id=order_result.get("orderId"),
+            side=opposite,
+            qty=qty,
+            entry_price=Decimal("0"),
+            take_profit=Decimal("0"),
+            stop_loss=Decimal("0"),
+        )
+
     def simulate_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
         simulated_order = self._build_order_template(side, entry_price)
         timestamp = time.time_ns()
