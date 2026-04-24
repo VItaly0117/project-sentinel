@@ -297,7 +297,17 @@ Exchange rejected the smoke order: place_order failed after 3 attempts:
 position idx not match position mode (ErrCode: 10001)
 ```
 
-That error specifically means the Bybit account is in One-Way mode while the code emits Hedge-mode `positionIdx=1/2`. Fix: switch the Bybit demo account to Hedge mode (or patch `exchange.py` to emit `positionIdx=0` in One-Way — separate follow-up).
+That error specifically means the Bybit account's position mode does not match what the code sends. Use `BYBIT_POSITION_MODE` (see below) to align them without changing the account.
+
+### Bybit position mode
+
+Bybit linear perpetuals run in either **One-Way mode** (single slot per symbol, `positionIdx=0`) or **Hedge mode** (separate long/short slots, `positionIdx=1` for Buy/long and `positionIdx=2` for Sell/short). The adapter must match the account setting on every order, including reduce-only closes — otherwise Bybit returns `ErrCode 10001 position idx not match position mode`.
+
+| Env var | Default | Values | Effect |
+|---|---|---|---|
+| `BYBIT_POSITION_MODE` | `hedge` | `one_way` \| `hedge` | Sets `positionIdx` on every order placed by the runtime and the smoke-order tool. |
+
+Pick whichever matches your Bybit account UI setting. If the account is in One-Way mode, set `BYBIT_POSITION_MODE=one_way` in `.env`; the runtime will emit `positionIdx=0` on both `place_market_order` and the smoke-order close path. No other code changes required.
 
 ## Deploy helpers
 
