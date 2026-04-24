@@ -10,9 +10,16 @@ from typing import TYPE_CHECKING, Sequence
 
 import pandas as pd
 
-from .config import AppConfig, StrategyMode, load_app_config
+from .config import AppConfig, ExitMode, StrategyMode, load_app_config
 from .errors import CircuitBreakerOpen, ConfigError, ExchangeClientError, PreflightError, ReconciliationError
-from .models import BalanceSnapshot, ExchangeExposureSnapshot, SignalDecision
+from .exits import (
+    ExitState,
+    build_initial_levels,
+    compute_atr,
+    initial_exit_state,
+    update_exit_state_with_candle,
+)
+from .models import BalanceSnapshot, ClosedTradeReport, ExchangeExposureSnapshot, SignalDecision
 from .preflight import build_preflight_parser, log_preflight_report, run_preflight
 
 if TYPE_CHECKING:
@@ -78,6 +85,10 @@ class TradingRuntime:
         self._last_block_reason: str | None = None
         self._dry_run_equity: Decimal = Decimal("0")
         self._started_at: datetime | None = None
+        # ATR-trailing state — only used when EXIT_MODE=atr_trailing. None
+        # otherwise, and still None in trailing mode while flat.
+        self._trailing_state: ExitState | None = None
+        self._trailing_insufficient_atr_logged: bool = False
 
     def bootstrap(self) -> None:
         self._started_at = datetime.now(timezone.utc)
@@ -98,6 +109,7 @@ class TradingRuntime:
         if latest_closed_trade is not None and self._last_reported_closed_trade_id is None:
             self._last_reported_closed_trade_id = latest_closed_trade.order_id
         self._reconcile_startup_state()
+        self._load_and_reconcile_trailing_state()
         self._save_runtime_state()
         self._storage.record_runtime_event(
             level="INFO",
@@ -189,6 +201,13 @@ class TradingRuntime:
             )
             return
 
+        # Trailing update must run before the dedup/signal path so a
+        # trailing exit fires on the same loop tick that would otherwise
+        # evaluate a new signal. If the trailing stop fires we close and
+        # return — no new position is opened in the same run_once().
+        if self._maybe_update_trailing_stop(closed_candles):
+            return
+
         latest_closed_candle_time = closed_candles["ts"].iloc[-1].to_pydatetime()
         if latest_closed_candle_time == self._last_processed_candle_time:
             self._logger.debug("Closed candle %s already processed.", latest_closed_candle_time)
@@ -246,15 +265,20 @@ class TradingRuntime:
             )
             return
 
+        include_fixed_tp = self._include_fixed_tp_at_entry()
         if self._config.runtime.dry_run_mode:
-            order = self._exchange.simulate_market_order(signal.action, signal.market_price)
+            order = self._exchange.simulate_market_order(
+                signal.action, signal.market_price, include_fixed_tp=include_fixed_tp
+            )
             decision_outcome = "dry_run_order_simulated"
             event_type = "dry_run_order_simulated"
             event_message = f"Simulated {order.side} order in dry-run mode."
             log_prefix = "Dry-run simulated order"
         else:
             try:
-                order = self._exchange.place_market_order(signal.action, signal.market_price)
+                order = self._exchange.place_market_order(
+                    signal.action, signal.market_price, include_fixed_tp=include_fixed_tp
+                )
             except Exception as exc:
                 self._storage.record_signal(signal, decision_outcome="order_failed", detail_text=str(exc))
                 raise
@@ -262,6 +286,11 @@ class TradingRuntime:
             event_type = "order_placed"
             event_message = f"Placed {order.side} order."
             log_prefix = "Order placed"
+
+        # If trailing mode is active, snapshot the initial ExitState so
+        # the next loop tick can start managing the trailing stop.
+        if self._config.exits.mode is ExitMode.ATR_TRAILING:
+            self._initialize_trailing_state(order, signal, closed_candles, include_fixed_tp)
 
         self._set_last_action_marker(signal, order.order_id)
         self._save_runtime_state()
@@ -356,6 +385,218 @@ class TradingRuntime:
         )
         self._notifier.send_trade_closed(latest_trade)
 
+    def _include_fixed_tp_at_entry(self) -> bool:
+        """Whether a new entry order should attach a fixed takeProfit.
+
+        In fixed mode we always attach TP (legacy behaviour). In trailing
+        mode we only attach TP when ``TRAILING_KEEP_FIXED_TP=true``.
+        """
+        if self._config.exits.mode is not ExitMode.ATR_TRAILING:
+            return True
+        return self._config.exits.trailing.keep_fixed_tp
+
+    def _initialize_trailing_state(
+        self,
+        order,  # PlacedOrder
+        signal: SignalDecision,
+        closed_candles: pd.DataFrame,
+        include_fixed_tp: bool,
+    ) -> None:
+        """Build and persist the initial ExitState for a just-opened position.
+
+        Uses the exchange's price_decimals and the configured SL/TP pcts
+        via ``build_initial_levels`` so the state mirrors what was sent to
+        Bybit. ATR at entry is best-effort — if there is not enough
+        closed-candle history, we store ``None`` and let future loops
+        recompute it.
+        """
+        sl_pct = self._config.strategy.sl_pct
+        tp_pct = self._config.strategy.tp_pct
+        levels = build_initial_levels(
+            side=order.side,
+            entry_price=order.entry_price,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
+            include_fixed_tp=include_fixed_tp,
+        )
+        entry_atr = self._compute_current_atr(closed_candles)
+        candle_time = signal.candle_open_time.isoformat() if signal.candle_open_time else None
+        self._trailing_state = initial_exit_state(
+            side=order.side,
+            qty=order.qty,
+            entry_price=order.entry_price,
+            hard_stop=levels.hard_stop,
+            fixed_take_profit=levels.fixed_take_profit,
+            entry_atr=entry_atr,
+            last_update_candle_time=candle_time,
+        )
+        self._persist_trailing_state()
+        self._trailing_insufficient_atr_logged = False
+        self._storage.record_runtime_event(
+            level="INFO",
+            event_type="trailing_state_initialized",
+            message="Initialised trailing state for new position.",
+            context={
+                "side": order.side,
+                "entry_price": str(order.entry_price),
+                "hard_stop": str(levels.hard_stop),
+                "fixed_take_profit": (
+                    str(levels.fixed_take_profit)
+                    if levels.fixed_take_profit is not None
+                    else None
+                ),
+                "entry_atr": str(entry_atr) if entry_atr is not None else None,
+            },
+        )
+
+    def _maybe_update_trailing_stop(self, closed_candles: pd.DataFrame) -> bool:
+        """Drive the exit engine once per closed candle; close on its call.
+
+        Returns ``True`` when a close was triggered and ``run_once()`` must
+        short-circuit so no new entry is opened on the same tick.
+        """
+        if self._config.exits.mode is not ExitMode.ATR_TRAILING:
+            return False
+        state = self._trailing_state
+        if state is None:
+            return False
+        if closed_candles.empty:
+            return False
+
+        latest = closed_candles.iloc[-1]
+        candle_time_iso = latest["ts"].to_pydatetime().isoformat()
+        if state.last_update_candle_time == candle_time_iso:
+            return False
+
+        current_atr = self._compute_current_atr(closed_candles)
+        if current_atr is None and not self._trailing_insufficient_atr_logged:
+            self._logger.warning(
+                "Insufficient ATR history for trailing update — keeping hard SL only."
+            )
+            self._trailing_insufficient_atr_logged = True
+        elif current_atr is not None:
+            self._trailing_insufficient_atr_logged = False
+
+        decision = update_exit_state_with_candle(
+            state,
+            self._config.exits.trailing,
+            candle_high=Decimal(str(latest["high"])),
+            candle_low=Decimal(str(latest["low"])),
+            candle_close=Decimal(str(latest["close"])),
+            current_atr=current_atr,
+            candle_time=candle_time_iso,
+        )
+        self._trailing_state = decision.state
+        self._persist_trailing_state()
+
+        if not decision.should_close:
+            return False
+
+        self._logger.info(
+            "Trailing exit triggered side=%s reason=%s exit=%s",
+            decision.state.side,
+            decision.reason,
+            decision.exit_price,
+        )
+        exit_price = decision.exit_price or decision.state.entry_price
+        order_id = self._close_position_for_trailing_exit(
+            state=decision.state,
+            reason=decision.reason,
+            exit_price=exit_price,
+        )
+        self._trailing_state = None
+        self._persist_trailing_state()
+        if order_id == self._last_action_order_id or self._config.runtime.dry_run_mode:
+            self._clear_last_action_marker()
+        self._save_runtime_state()
+        return True
+
+    def _compute_current_atr(self, closed_candles: pd.DataFrame) -> Decimal | None:
+        """Compute ATR from the most recent closed-candle window.
+
+        Uses ``TRAILING_ATR_PERIOD + 1`` bars. If history is short, returns
+        ``None`` so the engine leaves the trailing stop unchanged.
+        """
+        period = self._config.exits.trailing.atr_period
+        needed = period + 1
+        if len(closed_candles) < needed:
+            return None
+        window = closed_candles.tail(needed)
+        highs = [Decimal(str(x)) for x in window["high"].tolist()]
+        lows = [Decimal(str(x)) for x in window["low"].tolist()]
+        closes = [Decimal(str(x)) for x in window["close"].tolist()]
+        return compute_atr(highs, lows, closes, period=period)
+
+    def _close_position_for_trailing_exit(
+        self,
+        *,
+        state: ExitState,
+        reason: str,
+        exit_price: Decimal,
+    ) -> str | None:
+        """Close the position using reduce-only in live mode; synthesise in dry-run.
+
+        Returns the closing order id (may be ``None`` for dry-run). The
+        caller is responsible for clearing trailing state afterwards.
+        """
+        qty = state.qty
+        side = state.side
+        if self._config.runtime.dry_run_mode:
+            synthetic_order_id = (
+                f"dry-run-trailing-{self._config.exchange.symbol.lower()}-{time.time_ns()}"
+            )
+            pnl = (
+                (exit_price - state.entry_price) * qty
+                if side == "Buy"
+                else (state.entry_price - exit_price) * qty
+            )
+            synthetic_trade = ClosedTradeReport(
+                order_id=synthetic_order_id,
+                pnl=pnl,
+                side=side,
+                qty=qty,
+                entry_price=state.entry_price,
+                exit_price=exit_price,
+            )
+            self._storage.record_trade_closed(synthetic_trade)
+            self._storage.record_runtime_event(
+                level="INFO",
+                event_type="trailing_exit_simulated",
+                message=f"Dry-run trailing exit ({reason}).",
+                context={
+                    "side": side,
+                    "entry_price": str(state.entry_price),
+                    "exit_price": str(exit_price),
+                    "reason": reason,
+                    "pnl": str(pnl),
+                },
+            )
+            self._notifier.send_trade_closed(synthetic_trade)
+            return synthetic_order_id
+
+        try:
+            closing_order = self._exchange.close_position_market(side, qty)
+        except Exception as exc:
+            self._storage.record_error_event(
+                error_type="trailing_close_failed",
+                message=str(exc),
+                context={"reason": reason, "side": side, "qty": str(qty)},
+            )
+            raise
+        self._storage.record_runtime_event(
+            level="INFO",
+            event_type="trailing_exit_closed",
+            message=f"Trailing exit ({reason}).",
+            context={
+                "side": side,
+                "entry_price": str(state.entry_price),
+                "exit_price": str(exit_price),
+                "reason": reason,
+                "closing_order_id": closing_order.order_id,
+            },
+        )
+        return closing_order.order_id
+
     def _maybe_notify_block(self, reason: str | None) -> None:
         if reason is None or reason == self._last_block_reason:
             return
@@ -381,6 +622,78 @@ class TradingRuntime:
             )
         except Exception:
             self._logger.exception("Failed to persist error event.")
+
+    def _load_and_reconcile_trailing_state(self) -> None:
+        """Load persisted trailing state and reconcile with the exchange.
+
+        Only active when ``EXIT_MODE=atr_trailing``. Rules:
+          - Flat exchange + stored state → clear it and emit an event.
+          - Stored state + exchange exposure → resume trailing (best effort
+            match; if we already know the last action side matches the
+            single open position, resume).
+          - Exchange exposure + no state in trailing mode → a legacy
+            position exists that this runtime cannot trail. We log a
+            warning event and leave trailing off; exchange-side hard SL
+            continues to protect the position. A full fail-safe is
+            deferred — the startup reconciliation above already covers
+            ambiguous cases via the last-action marker.
+        """
+        if self._config.exits.mode is not ExitMode.ATR_TRAILING:
+            return
+        payload = self._storage.load_trailing_state()
+        if payload is None:
+            return
+        try:
+            state = ExitState.from_dict(payload)
+        except (KeyError, ValueError) as exc:
+            self._logger.warning(
+                "Discarding unreadable persisted trailing state: %s", exc
+            )
+            self._storage.clear_trailing_state()
+            self._storage.record_runtime_event(
+                level="WARNING",
+                event_type="trailing_state_discarded",
+                message="Persisted trailing state was unreadable and has been cleared.",
+                context={"error": str(exc)},
+            )
+            return
+
+        if self._config.runtime.dry_run_mode:
+            # In dry-run we never track real exchange exposure, so always
+            # trust the persisted state.
+            self._trailing_state = state
+            self._storage.record_runtime_event(
+                level="INFO",
+                event_type="trailing_state_resumed",
+                message="Resumed trailing state from storage (dry-run).",
+                context={"side": state.side, "entry_price": str(state.entry_price)},
+            )
+            return
+
+        exposure = self._exchange.get_open_exposure_snapshot()
+        if exposure.open_positions == 0:
+            self._logger.info("Clearing stale trailing state — exchange is flat.")
+            self._storage.clear_trailing_state()
+            self._storage.record_runtime_event(
+                level="INFO",
+                event_type="trailing_state_cleared_on_flat_exchange",
+                message="Cleared stale trailing state because the exchange has no open position.",
+                context={"side": state.side},
+            )
+            return
+        self._trailing_state = state
+        self._storage.record_runtime_event(
+            level="INFO",
+            event_type="trailing_state_resumed",
+            message="Resumed trailing state from storage.",
+            context={"side": state.side, "entry_price": str(state.entry_price)},
+        )
+
+    def _persist_trailing_state(self) -> None:
+        if self._trailing_state is None:
+            self._storage.clear_trailing_state()
+        else:
+            self._storage.save_trailing_state(self._trailing_state.to_dict())
 
     def _reconcile_startup_state(self) -> None:
         exposure = self._exchange.get_open_exposure_snapshot()

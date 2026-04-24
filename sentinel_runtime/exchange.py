@@ -198,23 +198,39 @@ class BybitExchangeClient:
             exit_price=self._extract_decimal(trade, ("avgExitPrice",), Decimal("0")),
         )
 
-    def place_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
+    def place_market_order(
+        self,
+        side: OrderSide,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
+        """Place a market entry with an attached hard SL (and optionally TP).
+
+        ``include_fixed_tp`` defaults to ``True`` so EXIT_MODE=fixed callers
+        (and all existing callers) get the exact same kwargs as before. In
+        EXIT_MODE=atr_trailing with ``TRAILING_KEEP_FIXED_TP=false``, the
+        runtime passes ``False`` to omit the ``takeProfit`` kwarg from the
+        request — no synthetic TP is sent in that case. Stop-loss is
+        always attached as disaster-recovery protection.
+        """
         order_template = self._build_order_template(side, entry_price)
         position_index = self._position_idx_for_side(side)
+        order_kwargs: dict[str, Any] = {
+            "category": self._exchange_config.category,
+            "symbol": self._exchange_config.symbol,
+            "side": side,
+            "orderType": "Market",
+            "qty": str(self._strategy_config.order_qty),
+            "stopLoss": str(order_template.stop_loss),
+            "slTriggerBy": "MarkPrice",
+            "positionIdx": position_index,
+        }
+        if include_fixed_tp:
+            order_kwargs["takeProfit"] = str(order_template.take_profit)
+            order_kwargs["tpTriggerBy"] = "MarkPrice"
         response = self._call(
             "place_order",
-            lambda: self._session.place_order(
-                category=self._exchange_config.category,
-                symbol=self._exchange_config.symbol,
-                side=side,
-                orderType="Market",
-                qty=str(self._strategy_config.order_qty),
-                takeProfit=str(order_template.take_profit),
-                stopLoss=str(order_template.stop_loss),
-                tpTriggerBy="MarkPrice",
-                slTriggerBy="MarkPrice",
-                positionIdx=position_index,
-            ),
+            lambda: self._session.place_order(**order_kwargs),
         )
         order_result = response.get("result", {})
         return PlacedOrder(
@@ -222,7 +238,7 @@ class BybitExchangeClient:
             side=order_template.side,
             qty=order_template.qty,
             entry_price=order_template.entry_price,
-            take_profit=order_template.take_profit,
+            take_profit=order_template.take_profit if include_fixed_tp else Decimal("0"),
             stop_loss=order_template.stop_loss,
         )
 
@@ -263,7 +279,18 @@ class BybitExchangeClient:
             stop_loss=Decimal("0"),
         )
 
-    def simulate_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
+    def simulate_market_order(
+        self,
+        side: OrderSide,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
+        """Dry-run counterpart to ``place_market_order``.
+
+        Carries the same ``include_fixed_tp`` semantics so dry-run records
+        show ``take_profit=0`` when the trailing engine would have omitted
+        TP at entry — mirroring what the exchange would see.
+        """
         simulated_order = self._build_order_template(side, entry_price)
         timestamp = time.time_ns()
         return PlacedOrder(
@@ -271,7 +298,7 @@ class BybitExchangeClient:
             side=simulated_order.side,
             qty=simulated_order.qty,
             entry_price=simulated_order.entry_price,
-            take_profit=simulated_order.take_profit,
+            take_profit=simulated_order.take_profit if include_fixed_tp else Decimal("0"),
             stop_loss=simulated_order.stop_loss,
         )
 
