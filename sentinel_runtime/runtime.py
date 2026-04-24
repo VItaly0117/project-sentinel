@@ -627,22 +627,31 @@ class TradingRuntime:
         """Load persisted trailing state and reconcile with the exchange.
 
         Only active when ``EXIT_MODE=atr_trailing``. Rules:
+          - Flat exchange + no state → ok.
           - Flat exchange + stored state → clear it and emit an event.
           - Stored state + exchange exposure → resume trailing (best effort
             match; if we already know the last action side matches the
             single open position, resume).
-          - Exchange exposure + no state in trailing mode → a legacy
-            position exists that this runtime cannot trail. We log a
-            warning event and leave trailing off; exchange-side hard SL
-            continues to protect the position. A full fail-safe is
-            deferred — the startup reconciliation above already covers
-            ambiguous cases via the last-action marker.
+          - Exchange exposure + no state in non-dry-run trailing mode →
+            fail safe. A position the runtime cannot trail must not be
+            silently left to a fixed exchange-side stop while the
+            operator believes trailing is active.
         """
         if self._config.exits.mode is not ExitMode.ATR_TRAILING:
             return
         payload = self._storage.load_trailing_state()
         if payload is None:
-            return
+            if self._config.runtime.dry_run_mode:
+                return
+            exposure = self._exchange.get_open_exposure_snapshot()
+            if exposure.open_positions == 0:
+                return
+            self._fail_trailing_reconciliation(
+                "EXIT_MODE=atr_trailing requires bot-managed trailing state, "
+                "but the exchange has an open position and no persisted "
+                "trailing state. Refusing to continue.",
+                exposure,
+            )
         try:
             state = ExitState.from_dict(payload)
         except (KeyError, ValueError) as exc:
@@ -779,6 +788,31 @@ class TradingRuntime:
         self._storage.record_runtime_event(
             level="ERROR",
             event_type="startup_reconciliation_failed",
+            message=message,
+            context=context,
+        )
+        self._storage.record_error_event(
+            error_type="reconciliation_error",
+            message=message,
+            context=context,
+        )
+        raise ReconciliationError(message)
+
+    def _fail_trailing_reconciliation(
+        self,
+        message: str,
+        exposure: ExchangeExposureSnapshot,
+    ) -> None:
+        context = {
+            "exchange_open_positions": exposure.open_positions,
+            "exchange_open_orders": exposure.open_orders,
+            "exchange_position_sides": list(exposure.position_sides),
+            "exchange_open_order_ids": list(exposure.open_order_ids),
+        }
+        self._logger.error("Trailing-state reconciliation failed: %s", message)
+        self._storage.record_runtime_event(
+            level="ERROR",
+            event_type="trailing_state_reconciliation_failed",
             message=message,
             context=context,
         )
