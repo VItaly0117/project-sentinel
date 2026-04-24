@@ -157,28 +157,51 @@ class FakeExchange:
             open_order_ids=self.open_order_ids,
         )
 
-    def place_market_order(self, side: str, entry_price: Decimal) -> PlacedOrder:
+    def place_market_order(
+        self,
+        side: str,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
         order = PlacedOrder(
             order_id=f"order-{len(self.placed_orders) + 1}",
             side=side,
             qty=Decimal("0.001"),
             entry_price=entry_price,
-            take_profit=Decimal("101.00"),
+            take_profit=Decimal("101.00") if include_fixed_tp else Decimal("0"),
             stop_loss=Decimal("99.00"),
         )
         self.placed_orders.append(order)
         return order
 
-    def simulate_market_order(self, side: str, entry_price: Decimal) -> PlacedOrder:
+    def simulate_market_order(
+        self,
+        side: str,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
         order = PlacedOrder(
             order_id=f"dry-run-{len(self.simulated_orders) + 1}",
             side=side,
             qty=Decimal("0.001"),
             entry_price=entry_price,
-            take_profit=Decimal("101.00"),
+            take_profit=Decimal("101.00") if include_fixed_tp else Decimal("0"),
             stop_loss=Decimal("99.00"),
         )
         self.simulated_orders.append(order)
+        return order
+
+    def close_position_market(self, side: str, qty: Decimal) -> PlacedOrder:
+        opposite: str = "Sell" if side == "Buy" else "Buy"
+        order = PlacedOrder(
+            order_id=f"close-{len(self.placed_orders) + 1}",
+            side=opposite,
+            qty=qty,
+            entry_price=Decimal("0"),
+            take_profit=Decimal("0"),
+            stop_loss=Decimal("0"),
+        )
+        self.placed_orders.append(order)
         return order
 
 
@@ -277,6 +300,7 @@ class FakeStorage:
         self.risk_snapshots: list[tuple[RiskSnapshot, bool, str | None]] = []
         self.runtime_events: list[tuple[str, str, str]] = []
         self.error_events: list[tuple[str, str]] = []
+        self._trailing_state: dict | None = None
 
     @property
     def db_path(self) -> Path:
@@ -326,6 +350,15 @@ class FakeStorage:
 
     def record_error_event(self, error_type: str, message: str, context=None) -> None:  # noqa: ANN001
         self.error_events.append((error_type, message))
+
+    def save_trailing_state(self, state_dict: dict) -> None:
+        self._trailing_state = dict(state_dict)
+
+    def load_trailing_state(self) -> dict | None:
+        return None if self._trailing_state is None else dict(self._trailing_state)
+
+    def clear_trailing_state(self) -> None:
+        self._trailing_state = None
 
 
 @pytest.fixture(autouse=True)
@@ -1611,3 +1644,475 @@ def _frozen_datetime(frozen_now: real_datetime):
             return frozen_now.astimezone(tz)
 
     return FrozenDateTime
+
+
+# ---------------------------------------------------------------------------
+# EXIT_MODE — config parsing + validation for the ATR trailing engine.
+# Default must remain `fixed` so the existing runtime behaves identically.
+# ---------------------------------------------------------------------------
+
+
+def _clear_exit_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "EXIT_MODE",
+        "TRAILING_ACTIVATION_PCT",
+        "TRAILING_ATR_MULT",
+        "TRAILING_ATR_PERIOD",
+        "TRAILING_MIN_LOCK_PCT",
+        "TRAILING_KEEP_FIXED_TP",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_load_app_config_exit_mode_defaults_to_fixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.config import ExitMode
+
+    _clear_exit_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path)
+    config = load_app_config(env_path)
+
+    assert config.exits.mode is ExitMode.FIXED
+    assert config.exits.trailing.enabled is False
+
+
+def test_load_app_config_exit_mode_parses_atr_trailing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sentinel_runtime.config import ExitMode
+
+    _clear_exit_mode_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        EXIT_MODE="atr_trailing",
+        TRAILING_ACTIVATION_PCT="0.004",
+        TRAILING_ATR_MULT="1.4",
+        TRAILING_ATR_PERIOD="14",
+        TRAILING_MIN_LOCK_PCT="0.0015",
+        TRAILING_KEEP_FIXED_TP="false",
+    )
+    config = load_app_config(env_path)
+
+    assert config.exits.mode is ExitMode.ATR_TRAILING
+    assert config.exits.trailing.enabled is True
+    assert config.exits.trailing.activation_pct == Decimal("0.004")
+    assert config.exits.trailing.atr_mult == Decimal("1.4")
+    assert config.exits.trailing.atr_period == 14
+    assert config.exits.trailing.min_lock_pct == Decimal("0.0015")
+    assert config.exits.trailing.keep_fixed_tp is False
+
+
+def test_load_app_config_rejects_invalid_exit_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_exit_mode_env(monkeypatch)
+    env_path = _write_env_file(tmp_path, EXIT_MODE="trailing_pro_max")
+    with pytest.raises(ConfigError, match="EXIT_MODE"):
+        load_app_config(env_path)
+
+
+def test_load_app_config_rejects_invalid_trailing_atr_period(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_exit_mode_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        EXIT_MODE="atr_trailing",
+        TRAILING_ATR_PERIOD="1",
+    )
+    with pytest.raises(ConfigError, match="TRAILING_ATR_PERIOD"):
+        load_app_config(env_path)
+
+
+def test_trailing_mode_places_order_without_fixed_tp_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """TRAILING_KEEP_FIXED_TP=false → place_market_order receives no TP."""
+    from sentinel_runtime.config import ExitMode, ExitsConfig
+    from sentinel_runtime.exits import AtrTrailingConfig
+
+    fixed_now = real_datetime(2026, 4, 24, 12, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(runtime_module, "datetime", _frozen_datetime(fixed_now))
+    candles = _build_candles([f"2026-04-24T{h:02d}:{m:02d}:00Z"
+                              for h in (10, 11, 12) for m in (0, 5)])[:5]
+    trailing = AtrTrailingConfig(
+        enabled=True,
+        activation_pct=Decimal("0.004"),
+        atr_mult=Decimal("1.4"),
+        atr_period=2,
+        min_lock_pct=Decimal("0"),
+        keep_fixed_tp=False,
+    )
+    config = _app_config(tmp_path, dry_run_mode=False)
+    config = _with_exits(config, ExitsConfig(mode=ExitMode.ATR_TRAILING, trailing=trailing))
+    runtime, exchange, _, _, _, _ = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=candles,
+        risk_evaluation=_allowed_risk_evaluation(),
+        action="Buy",
+        config=config,
+    )
+
+    runtime.run_once()
+
+    assert len(exchange.placed_orders) == 1
+    # The FakeExchange sets take_profit to 0 when include_fixed_tp=False.
+    assert exchange.placed_orders[0].take_profit == Decimal("0")
+
+
+def test_trailing_mode_dry_run_close_does_not_hit_exchange_api(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Dry-run trailing exit synthesises a closed-trade record; no exchange order."""
+    from sentinel_runtime.config import ExitMode, ExitsConfig
+    from sentinel_runtime.exits import (
+        AtrTrailingConfig,
+        ExitState,
+    )
+
+    fixed_now = real_datetime(2026, 4, 24, 13, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(runtime_module, "datetime", _frozen_datetime(fixed_now))
+    # Three closed candles whose latest low punches below the hard stop.
+    candles = _build_trailing_candles(
+        [
+            ("2026-04-24T12:50:00Z", 100, 100.5, 99.8, 100.2),
+            ("2026-04-24T12:55:00Z", 100, 100.7, 99.8, 100.3),
+            ("2026-04-24T13:00:00Z", 100, 100.4, 98.0, 98.5),
+        ]
+    )
+    trailing = AtrTrailingConfig(
+        enabled=True,
+        activation_pct=Decimal("0.004"),
+        atr_mult=Decimal("1.4"),
+        atr_period=2,
+        min_lock_pct=Decimal("0"),
+        keep_fixed_tp=False,
+    )
+    config = _app_config(tmp_path, dry_run_mode=True)
+    config = _with_exits(config, ExitsConfig(mode=ExitMode.ATR_TRAILING, trailing=trailing))
+
+    # Pre-seed persisted trailing state so bootstrap resumes a "Buy" position
+    # whose hard stop is 99. The third candle's low of 98 must trigger it.
+    persisted_state = ExitState(
+        side="Buy",
+        qty=Decimal("0.001"),
+        entry_price=Decimal("100"),
+        hard_stop=Decimal("99"),
+        fixed_take_profit=None,
+        trailing_active=False,
+        best_price=Decimal("100"),
+        trailing_stop=None,
+        entry_atr=Decimal("0.5"),
+        last_update_candle_time="2026-04-24T12:55:00+00:00",
+    )
+    storage = FakeStorage()
+    storage._trailing_state = persisted_state.to_dict()
+
+    runtime, exchange, _, _, notifier, _ = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=candles,
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=config,
+        storage=storage,
+    )
+
+    runtime.bootstrap()
+    runtime.run_once()
+
+    # Dry-run must NOT call place_market_order nor close_position_market.
+    assert exchange.placed_orders == []
+    assert len(storage.closed_trades) == 1
+    assert storage.closed_trades[0].side == "Buy"
+    # Trailing state cleared after the exit.
+    assert storage.load_trailing_state() is None
+    # Notifier saw the closed trade.
+    assert len(notifier.trade_closed) == 1
+
+
+def test_trailing_mode_clears_stale_state_when_exchange_is_flat_on_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from sentinel_runtime.config import ExitMode, ExitsConfig
+    from sentinel_runtime.exits import AtrTrailingConfig
+
+    trailing = AtrTrailingConfig(
+        enabled=True,
+        activation_pct=Decimal("0.004"),
+        atr_mult=Decimal("1.4"),
+        atr_period=14,
+        min_lock_pct=Decimal("0.0015"),
+        keep_fixed_tp=False,
+    )
+    config = _app_config(tmp_path, dry_run_mode=False)
+    config = _with_exits(config, ExitsConfig(mode=ExitMode.ATR_TRAILING, trailing=trailing))
+    storage = FakeStorage()
+    storage._trailing_state = {
+        "side": "Buy",
+        "qty": "0.001",
+        "entry_price": "100",
+        "hard_stop": "99",
+        "fixed_take_profit": None,
+        "trailing_active": False,
+        "best_price": "100",
+        "trailing_stop": None,
+        "entry_atr": "0.5",
+        "last_update_candle_time": None,
+    }
+    runtime, exchange, _, _, _, storage_back = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=_build_candles(["2026-04-24T12:00:00Z", "2026-04-24T12:05:00Z"]),
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=config,
+        storage=storage,
+    )
+    # Exchange is flat (open_positions=0 by default).
+    runtime.bootstrap()
+
+    assert storage_back.load_trailing_state() is None
+    assert any(
+        event[1] == "trailing_state_cleared_on_flat_exchange"
+        for event in storage_back.runtime_events
+    )
+
+
+def _build_trailing_candles(rows: list[tuple[str, float, float, float, float]]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "ts": pd.to_datetime([r[0] for r in rows], utc=True),
+            "open": [r[1] for r in rows],
+            "high": [r[2] for r in rows],
+            "low": [r[3] for r in rows],
+            "close": [r[4] for r in rows],
+            "vol": [100.0 for _ in rows],
+            "turnover": [1000.0 for _ in rows],
+        }
+    )
+
+
+def _with_exits(config: AppConfig, exits) -> AppConfig:
+    """Return a new AppConfig with the given `exits` field. Frozen-dataclass-safe."""
+    from dataclasses import replace
+
+    return replace(config, exits=exits)
+
+
+def _make_runtime_with_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    candles: pd.DataFrame,
+    risk_evaluation: RiskEvaluation,
+    action: str | None,
+    config: AppConfig,
+    storage: FakeStorage | None = None,
+):
+    fake_exchange = FakeExchange(candles)
+    fake_signal_engine = FakeSignalEngine(action)
+    fake_risk_manager = FakeRiskManager(risk_evaluation)
+    fake_notifier = FakeNotifier()
+    fake_storage = storage or FakeStorage()
+
+    monkeypatch.setattr(runtime_module, "BybitExchangeClient", lambda **kwargs: fake_exchange)
+    monkeypatch.setattr(runtime_module, "ModelSignalEngine", lambda **kwargs: fake_signal_engine)
+    monkeypatch.setattr(runtime_module, "RiskManager", lambda config: fake_risk_manager)
+    monkeypatch.setattr(runtime_module, "TelegramNotifier", lambda config: fake_notifier)
+    monkeypatch.setattr(runtime_module, "create_storage", lambda storage_config: fake_storage)
+
+    runtime = runtime_module.TradingRuntime(config)
+    return runtime, fake_exchange, fake_signal_engine, fake_risk_manager, fake_notifier, fake_storage
+
+
+def test_load_app_config_rejects_negative_trailing_activation_pct(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _clear_exit_mode_env(monkeypatch)
+    env_path = _write_env_file(
+        tmp_path,
+        EXIT_MODE="atr_trailing",
+        TRAILING_ACTIVATION_PCT="-0.01",
+    )
+    with pytest.raises(ConfigError, match="TRAILING_ACTIVATION_PCT"):
+        load_app_config(env_path)
+
+
+# ---------------------------------------------------------------------------
+# Trailing-state startup reconciliation: in EXIT_MODE=atr_trailing, a real
+# (non-dry-run) exchange position with no persisted trailing state must fail
+# safe rather than silently leave a legacy position uncovered by trailing.
+# ---------------------------------------------------------------------------
+
+
+def _trailing_config(tmp_path: Path, *, dry_run_mode: bool) -> AppConfig:
+    from sentinel_runtime.config import ExitMode, ExitsConfig
+    from sentinel_runtime.exits import AtrTrailingConfig
+
+    trailing = AtrTrailingConfig(
+        enabled=True,
+        activation_pct=Decimal("0.004"),
+        atr_mult=Decimal("1.4"),
+        atr_period=14,
+        min_lock_pct=Decimal("0.0015"),
+        keep_fixed_tp=False,
+    )
+    config = _app_config(tmp_path, dry_run_mode=dry_run_mode)
+    return _with_exits(config, ExitsConfig(mode=ExitMode.ATR_TRAILING, trailing=trailing))
+
+
+def test_trailing_mode_fails_safe_on_exchange_exposure_without_trailing_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Non-dry-run + exposure + no trailing_state -> ReconciliationError."""
+    persisted_state = RuntimeState(
+        last_processed_candle_time=None,
+        last_reported_closed_trade_id=None,
+        starting_balance=Decimal("100"),
+        last_action_candle_time=pd.Timestamp("2026-04-24T12:05:00Z").to_pydatetime(),
+        last_action_side="Buy",
+        last_action_order_id="order-1",
+    )
+    storage = FakeStorage(initial_state=persisted_state)
+    runtime, exchange, _, _, _, storage_back = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=_build_candles(["2026-04-24T12:00:00Z", "2026-04-24T12:05:00Z"]),
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=_trailing_config(tmp_path, dry_run_mode=False),
+        storage=storage,
+    )
+    exchange.open_positions = 1
+    exchange.position_sides = ("Buy",)
+
+    with pytest.raises(ReconciliationError, match="bot-managed trailing state"):
+        runtime.bootstrap()
+
+    assert any(
+        event[1] == "trailing_state_reconciliation_failed"
+        for event in storage_back.runtime_events
+    )
+    assert any(error[0] == "reconciliation_error" for error in storage_back.error_events)
+
+
+def test_trailing_mode_dry_run_without_trailing_state_does_not_fail(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Dry-run + no persisted trailing state must bootstrap normally."""
+    runtime, _, _, _, _, storage = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=_build_candles(["2026-04-24T12:00:00Z", "2026-04-24T12:05:00Z"]),
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=_trailing_config(tmp_path, dry_run_mode=True),
+    )
+
+    runtime.bootstrap()
+
+    assert storage.load_trailing_state() is None
+    assert runtime._trailing_state is None
+    assert not any(
+        event[1] == "trailing_state_reconciliation_failed"
+        for event in storage.runtime_events
+    )
+
+
+def test_trailing_mode_resumes_state_when_exchange_has_matching_exposure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Non-dry-run + valid persisted trailing_state + matching exposure -> resume."""
+    from sentinel_runtime.exits import ExitState
+
+    persisted_runtime_state = RuntimeState(
+        last_processed_candle_time=None,
+        last_reported_closed_trade_id=None,
+        starting_balance=Decimal("100"),
+        last_action_candle_time=pd.Timestamp("2026-04-24T12:05:00Z").to_pydatetime(),
+        last_action_side="Buy",
+        last_action_order_id="order-1",
+    )
+    storage = FakeStorage(initial_state=persisted_runtime_state)
+    storage._trailing_state = ExitState(
+        side="Buy",
+        qty=Decimal("0.001"),
+        entry_price=Decimal("100"),
+        hard_stop=Decimal("99"),
+        fixed_take_profit=None,
+        trailing_active=False,
+        best_price=Decimal("100"),
+        trailing_stop=None,
+        entry_atr=Decimal("0.5"),
+        last_update_candle_time="2026-04-24T12:05:00+00:00",
+    ).to_dict()
+
+    runtime, exchange, _, _, _, storage_back = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=_build_candles(["2026-04-24T12:00:00Z", "2026-04-24T12:05:00Z"]),
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=_trailing_config(tmp_path, dry_run_mode=False),
+        storage=storage,
+    )
+    exchange.open_positions = 1
+    exchange.position_sides = ("Buy",)
+
+    runtime.bootstrap()
+
+    assert runtime._trailing_state is not None
+    assert runtime._trailing_state.side == "Buy"
+    assert runtime._trailing_state.entry_price == Decimal("100")
+    assert any(
+        event[1] == "trailing_state_resumed" for event in storage_back.runtime_events
+    )
+
+
+def test_trailing_mode_clears_stale_state_when_exchange_is_flat(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Non-dry-run + persisted trailing_state + flat exchange -> clear and event."""
+    from sentinel_runtime.exits import ExitState
+
+    storage = FakeStorage()
+    storage._trailing_state = ExitState(
+        side="Buy",
+        qty=Decimal("0.001"),
+        entry_price=Decimal("100"),
+        hard_stop=Decimal("99"),
+        fixed_take_profit=None,
+        trailing_active=False,
+        best_price=Decimal("100"),
+        trailing_stop=None,
+        entry_atr=Decimal("0.5"),
+        last_update_candle_time=None,
+    ).to_dict()
+
+    runtime, _, _, _, _, storage_back = _make_runtime_with_config(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        candles=_build_candles(["2026-04-24T12:00:00Z", "2026-04-24T12:05:00Z"]),
+        risk_evaluation=_allowed_risk_evaluation(),
+        action=None,
+        config=_trailing_config(tmp_path, dry_run_mode=False),
+        storage=storage,
+    )
+
+    runtime.bootstrap()
+
+    assert storage_back.load_trailing_state() is None
+    assert runtime._trailing_state is None
+    assert any(
+        event[1] == "trailing_state_cleared_on_flat_exchange"
+        for event in storage_back.runtime_events
+    )

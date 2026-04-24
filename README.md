@@ -230,6 +230,123 @@ In the shipped compose, `btc-bot` polls commands (`TELEGRAM_COMMAND_POLLING_ENAB
 BTC_TELEGRAM_COMMAND_POLLING=false ETH_TELEGRAM_COMMAND_POLLING=true docker compose up -d
 ```
 
+## Exit modes (fixed / ATR trailing)
+
+The runtime and the backtester share the same exit engine
+(`sentinel_runtime/exits.py`). Exit behaviour is selected with
+`EXIT_MODE`:
+
+| Mode            | Description                                                                                |
+|-----------------|--------------------------------------------------------------------------------------------|
+| `fixed` (default) | Entry order carries both take-profit and stop-loss at `TP_PCT`/`SL_PCT`. Legacy behaviour. |
+| `atr_trailing`  | Initial hard stop stays. Optional fixed TP. Bot-managed ATR trailing stop that activates once the trade is in profit by `TRAILING_ACTIVATION_PCT`. |
+
+**Default behaviour is unchanged.** When `EXIT_MODE` is unset or set to
+`fixed`, every code path — order kwargs, dry-run simulation, preflight,
+reconciliation, Bybit `positionIdx` — behaves exactly as before.
+
+### Environment variables (ATR trailing)
+
+```bash
+# Turn trailing on (default: fixed)
+EXIT_MODE=atr_trailing
+
+# Profit threshold (fraction) before trailing activates. Hard SL stays active in the meantime.
+TRAILING_ACTIVATION_PCT=0.004   # 0.4%
+
+# ATR distance between best price and trailing stop.
+TRAILING_ATR_MULT=1.4
+
+# ATR lookback (closed candles).
+TRAILING_ATR_PERIOD=14
+
+# Floor (fraction of entry) applied to the trailing stop once activated.
+TRAILING_MIN_LOCK_PCT=0.0015    # 0.15%
+
+# Attach the fixed take-profit (TP_PCT) to the entry order even in trailing mode.
+TRAILING_KEEP_FIXED_TP=false
+```
+
+All values are validated at preflight — unknown `EXIT_MODE`, negative
+percentages, `atr_period < 2`, or `atr_mult <= 0` fail fast.
+
+### Backtest examples
+
+Fixed (baseline, current default):
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --confidence 0.51
+```
+
+ATR trailing, no fixed TP:
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --confidence 0.51 \
+  --exit-mode atr_trailing \
+  --sl-pct 0.006 \
+  --trailing-activation-pct 0.004 \
+  --trailing-atr-mult 1.4 \
+  --trailing-atr-period 14 \
+  --trailing-min-lock-pct 0.0015
+```
+
+ATR trailing, keep fixed TP as a ceiling:
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --exit-mode atr_trailing \
+  --trailing-keep-fixed-tp
+```
+
+The backtest report labels every trade's outcome as `tp`, `sl`,
+`trailing`, or `timeout`, and prints activation and "skipped (no ATR
+history)" counters.
+
+### Dry-run runtime example
+
+```bash
+# .env additions (do not commit real credentials)
+EXIT_MODE=atr_trailing
+TRAILING_ACTIVATION_PCT=0.004
+TRAILING_ATR_MULT=1.4
+TRAILING_ATR_PERIOD=14
+TRAILING_MIN_LOCK_PCT=0.0015
+TRAILING_KEEP_FIXED_TP=false
+DRY_RUN_MODE=true
+EXCHANGE_ENV=demo
+ALLOW_LIVE_MODE=false
+
+python3 sentineltest.py --preflight
+python3 sentineltest.py
+```
+
+In dry-run, a trailing exit is recorded as a synthetic closed trade and
+a Telegram notification is sent; the Bybit REST API is not called. In
+demo/live mode, the runtime issues a reduce-only market close via
+`close_position_market` — hedge/one-way `positionIdx` handling is
+unchanged.
+
+### Safety notes
+
+- ATR trailing is a **risk/exit feature**, not a guaranteed-profit
+  feature. The backtest matrix shows it can shift the win-rate /
+  profit-factor balance in either direction depending on confidence and
+  volatility regime.
+- Bot-managed trailing **depends on bot uptime**. If the runtime is
+  offline, the trailing stop cannot move. The initial hard SL attached
+  to the Bybit entry order remains active as a disaster-recovery stop.
+- The conservative same-candle rule used in backtest prefers adverse
+  outcomes (hard SL hitting first) unless trailing was already active
+  **before** that candle. Real-tick execution may differ.
+
 ## Demo smoke order (one-off)
 
 One-off operator tool to prove the Bybit **demo** order path end-to-end, independent of strategy signals. Not invoked during normal bot operation.

@@ -82,6 +82,42 @@ class SQLiteRuntimeStorage:
                 entries,
             )
 
+    # ------------------------------------------------------------------
+    # Trailing-state K/V (JSON blob under <bot_id>:trailing_state)
+    # ------------------------------------------------------------------
+
+    def save_trailing_state(self, state_dict: dict[str, Any]) -> None:
+        key = f"{self._bot_id}:trailing_state"
+        value = json.dumps(state_dict, sort_keys=True)
+        timestamp = self._utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO runtime_state(key, value_text, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_text=excluded.value_text,
+                    updated_at=excluded.updated_at
+                """,
+                (key, value, timestamp),
+            )
+
+    def load_trailing_state(self) -> dict[str, Any] | None:
+        key = f"{self._bot_id}:trailing_state"
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT value_text FROM runtime_state WHERE key = ?",
+                (key,),
+            ).fetchone()
+        if row is None or not row["value_text"]:
+            return None
+        return json.loads(row["value_text"])
+
+    def clear_trailing_state(self) -> None:
+        key = f"{self._bot_id}:trailing_state"
+        with self._connect() as connection:
+            connection.execute("DELETE FROM runtime_state WHERE key = ?", (key,))
+
     def record_signal(
         self,
         signal: SignalDecision,
@@ -554,6 +590,40 @@ class PostgreSQLRuntimeStorage:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.executemany(sql, entries)
+
+    def save_trailing_state(self, state_dict: dict[str, Any]) -> None:
+        value = json.dumps(state_dict, sort_keys=True)
+        ts = self._utc_now()
+        sql = (
+            "INSERT INTO runtime_state(key, value_text, updated_at)"
+            " VALUES (%s, %s, %s)"
+            " ON CONFLICT(key) DO UPDATE SET"
+            "     value_text=EXCLUDED.value_text,"
+            "     updated_at=EXCLUDED.updated_at"
+        )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, ("trailing_state", value, ts))
+
+    def load_trailing_state(self) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT value_text FROM runtime_state WHERE key = %s",
+                    ("trailing_state",),
+                )
+                row = cur.fetchone()
+        if row is None or not row[0]:
+            return None
+        return json.loads(row[0])
+
+    def clear_trailing_state(self) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM runtime_state WHERE key = %s",
+                    ("trailing_state",),
+                )
 
     def record_signal(
         self,

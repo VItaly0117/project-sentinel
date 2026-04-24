@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
 
 from .errors import ConfigError
+from .exits import AtrTrailingConfig, fixed_trailing_config
 
 
 class ExchangeEnvironment(str, Enum):
@@ -18,6 +19,19 @@ class ExchangeEnvironment(str, Enum):
 class StrategyMode(str, Enum):
     XGB = "xgb"
     ZSCORE_MEAN_REVERSION_V1 = "zscore_mean_reversion_v1"
+
+
+class ExitMode(str, Enum):
+    """Exit management mode.
+
+    ``fixed``        — existing behaviour: TP/SL attached to the entry order.
+    ``atr_trailing`` — hard SL stays, optional fixed TP, plus a bot-managed
+                        ATR trailing stop that activates after the trade is
+                        in profit by ``activation_pct``.
+    """
+
+    FIXED = "fixed"
+    ATR_TRAILING = "atr_trailing"
 
 
 class PositionMode(str, Enum):
@@ -110,6 +124,23 @@ class NotificationConfig:
 
 
 @dataclass(frozen=True)
+class ExitsConfig:
+    """Exit-management configuration shared by runtime and backtest.
+
+    ``mode`` selects between legacy fixed TP/SL and the opt-in ATR
+    trailing engine. ``trailing`` carries the trailing knobs; when
+    ``mode=fixed`` the trailing fields are inert.
+    """
+
+    mode: ExitMode = ExitMode.FIXED
+    trailing: AtrTrailingConfig = field(default_factory=fixed_trailing_config)
+
+
+def _default_exits_config() -> ExitsConfig:
+    return ExitsConfig()
+
+
+@dataclass(frozen=True)
 class AppConfig:
     exchange: ExchangeConfig
     strategy: StrategyConfig
@@ -118,6 +149,7 @@ class AppConfig:
     storage: StorageConfig
     circuit_breaker: CircuitBreakerConfig
     notifications: NotificationConfig
+    exits: ExitsConfig = field(default_factory=_default_exits_config)
 
 
 def load_app_config(env_path: Path | None = None) -> AppConfig:
@@ -230,6 +262,7 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         telegram_chat_id=_read_optional_env("TELEGRAM_CHAT_ID"),
         command_polling_enabled=_parse_bool("TELEGRAM_COMMAND_POLLING_ENABLED", True),
     )
+    exits = _load_exits_config()
 
     return AppConfig(
         exchange=exchange,
@@ -239,7 +272,40 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         storage=storage,
         circuit_breaker=circuit_breaker,
         notifications=notifications,
+        exits=exits,
     )
+
+
+def _load_exits_config() -> ExitsConfig:
+    """Parse EXIT_MODE + TRAILING_* env vars.
+
+    Defaults preserve legacy behaviour: ``EXIT_MODE=fixed`` makes the
+    trailing knobs irrelevant. Values are parsed even in fixed mode so
+    misconfigured env files surface early in preflight rather than on
+    the first open position.
+    """
+    raw_exit_mode = _read_env("EXIT_MODE", ExitMode.FIXED.value).lower()
+    try:
+        mode = ExitMode(raw_exit_mode)
+    except ValueError as exc:
+        valid = ", ".join(m.value for m in ExitMode)
+        raise ConfigError(
+            f"Unsupported EXIT_MODE value: {raw_exit_mode!r}. Valid: {valid}."
+        ) from exc
+
+    trailing = AtrTrailingConfig(
+        enabled=(mode is ExitMode.ATR_TRAILING),
+        activation_pct=_parse_decimal("TRAILING_ACTIVATION_PCT", "0.004", minimum=Decimal("0")),
+        atr_mult=_parse_decimal("TRAILING_ATR_MULT", "1.4", minimum=Decimal("0.0000001")),
+        atr_period=_parse_int("TRAILING_ATR_PERIOD", 14, minimum=2),
+        min_lock_pct=_parse_decimal("TRAILING_MIN_LOCK_PCT", "0.0015", minimum=Decimal("0")),
+        keep_fixed_tp=_parse_bool("TRAILING_KEEP_FIXED_TP", False),
+    )
+    try:
+        trailing.validate()
+    except ValueError as exc:
+        raise ConfigError(f"Invalid trailing config: {exc}") from exc
+    return ExitsConfig(mode=mode, trailing=trailing)
 
 
 def load_dotenv_if_present(env_path: Path) -> None:

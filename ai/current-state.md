@@ -205,6 +205,43 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - Resolves ErrCode 10001 for Bybit demo accounts running in One-Way mode — set `BYBIT_POSITION_MODE=one_way` in `.env`, no code changes required.
 - Stacked on top of PR #16 (smoke-order tool).
 
+## ATR trailing-stop exits (2026-04-24)
+- Opt-in exit policy added to both the backtester and the live runtime.
+  Default behaviour is unchanged — `EXIT_MODE` is unset → `fixed`, which
+  preserves every existing order kwarg, dry-run path, preflight check,
+  reconciliation outcome, and hedge/one-way `positionIdx` mapping.
+- New module `sentinel_runtime/exits.py` implements the shared exit
+  engine used by both `scripts/backtest.py` and `sentinel_runtime/runtime.py`:
+  `compute_atr`, `initial_exit_state`, `update_exit_state_with_candle`,
+  `build_initial_levels`. No I/O, Decimal-only, unit-tested.
+- New env vars (all validated in preflight): `EXIT_MODE`,
+  `TRAILING_ACTIVATION_PCT`, `TRAILING_ATR_MULT`, `TRAILING_ATR_PERIOD`,
+  `TRAILING_MIN_LOCK_PCT`, `TRAILING_KEEP_FIXED_TP`.
+- Runtime: when `EXIT_MODE=atr_trailing` and a position is open, each
+  `run_once()` tick computes ATR from closed candles, calls the exit
+  engine, and, on its `should_close` decision, closes via
+  `close_position_market` (or synthesises a closed-trade record in
+  dry-run). Trailing state is persisted as a JSON blob under the
+  existing `runtime_state` K/V table — no schema change, restart-safe.
+- Exchange adapter: `place_market_order` and `simulate_market_order`
+  accept `include_fixed_tp=True` (default preserves existing behaviour);
+  in trailing mode with `TRAILING_KEEP_FIXED_TP=false`, `takeProfit` is
+  omitted entirely — no synthetic TP is sent.
+- Exchange-side hard SL continues to be attached at entry in both modes
+  as disaster-recovery protection.
+- Tests:
+  - New `tests/test_exits_engine.py` (20 cases: ATR correctness, long
+    and short activation, monotonic stop, hard SL precedence, fixed TP
+    toggle, min-lock floor, insufficient-ATR handling, same-candle
+    ambiguity, state round-trip).
+  - New runtime cases appended to `tests/test_runtime_mvp.py`: config
+    parsing, trailing-mode order without TP, dry-run close does not hit
+    exchange API, stale-state cleared on flat exchange.
+  - Full suite: 140/140 passed.
+- Backtest matrix (6-month BTCUSDT 5m, fixed vs trailing at conf 0.30/
+  0.45/0.51/0.60, with and without keep_fixed_tp) captured in the final
+  hand-off summary.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.

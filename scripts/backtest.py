@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -61,6 +62,13 @@ import xgboost as xgb
 # Добавляем корень проекта в sys.path, чтобы импортировать sentinel-пакеты
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sentinel_runtime.feature_engine import SMCEngine  # READ-ONLY — не редактировать
+from sentinel_runtime.exits import (
+    AtrTrailingConfig,
+    build_initial_levels,
+    compute_atr,
+    initial_exit_state,
+    update_exit_state_with_candle,
+)
 
 _FEATURE_NAMES: list[str] = SMCEngine.get_feature_names()
 
@@ -77,9 +85,16 @@ class Trade:
     side: Literal["long", "short"]
     entry_price: float
     exit_price: float
-    outcome: Literal["tp", "sl", "timeout"]
+    outcome: Literal["tp", "sl", "trailing", "timeout"]
     pnl_usdt: float
     duration_candles: int
+
+
+@dataclass
+class SimulationResult:
+    trades: list["Trade"]
+    skipped_no_atr: int = 0
+    trailing_activations: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +154,7 @@ def _compute_features_and_probs(
 # Симуляция сделок
 # ---------------------------------------------------------------------------
 
-def _simulate(
+def _simulate_fixed(
     raw_df: pd.DataFrame,
     enriched: pd.DataFrame,
     probs: np.ndarray,
@@ -150,7 +165,7 @@ def _simulate(
     look_ahead: int,
     order_qty: float,
     commission_pct: float,
-) -> list[Trade]:
+) -> SimulationResult:
     """
     Симулирует сделки без перекрытий (одна позиция одновременно).
 
@@ -245,7 +260,184 @@ def _simulate(
             duration_candles=exit_offset + 1,
         ))
 
-    return trades
+    return SimulationResult(trades=trades)
+
+
+# ---------------------------------------------------------------------------
+# ATR trailing simulation (feeds the shared exit engine candle-by-candle)
+# ---------------------------------------------------------------------------
+
+
+def _simulate_atr_trailing(
+    raw_df: pd.DataFrame,
+    enriched: pd.DataFrame,
+    probs: np.ndarray,
+    *,
+    confidence: float,
+    tp_pct: float,
+    sl_pct: float,
+    look_ahead: int,
+    order_qty: float,
+    commission_pct: float,
+    trailing: AtrTrailingConfig,
+) -> SimulationResult:
+    """Simulate trades using the shared ATR-trailing exit engine.
+
+    For each signal entry:
+      1. Require `trailing.atr_period + 1` prior closed candles for ATR;
+         if insufficient history, skip the trade (counted in
+         `skipped_no_atr`).
+      2. Send the initial hard SL (always) and a fixed TP only when
+         `trailing.keep_fixed_tp=True`.
+      3. Iterate forward up to `look_ahead` candles, recomputing ATR on
+         each closed candle and handing the candle to the exits engine.
+      4. On the engine's close decision, settle the trade at the
+         engine-returned exit price.
+      5. On timeout (engine returns no exit across the lookahead window),
+         close at the close of the last candle — matching the fixed-mode
+         timeout behaviour.
+
+    Conservative same-candle ambiguity is encapsulated in the exits
+    engine: adverse wins ties unless trailing was already active on the
+    previous candle boundary.
+    """
+    raw_ts_series: list[pd.Timestamp] = list(raw_df["ts"])
+    ts_to_raw_pos: dict[pd.Timestamp, int] = {ts: i for i, ts in enumerate(raw_ts_series)}
+
+    raw_highs = raw_df["high"].to_numpy(dtype=float)
+    raw_lows = raw_df["low"].to_numpy(dtype=float)
+    raw_closes = raw_df["close"].to_numpy(dtype=float)
+
+    atr_period = trailing.atr_period
+    # Work in Decimal within the engine, convert at the boundary. A short
+    # sliding window of the last `atr_period + 1` closed bars is all the
+    # engine needs per call.
+    decimal_highs = [Decimal(str(x)) for x in raw_highs]
+    decimal_lows = [Decimal(str(x)) for x in raw_lows]
+    decimal_closes = [Decimal(str(x)) for x in raw_closes]
+
+    trades: list[Trade] = []
+    skipped_no_atr = 0
+    trailing_activations = 0
+    block_until: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
+
+    for i, (signal_ts, row) in enumerate(enriched.iterrows()):
+        if signal_ts <= block_until:
+            continue
+
+        p_long = float(probs[i, 2])
+        p_short = float(probs[i, 1])
+        if p_long >= confidence:
+            side: Literal["long", "short"] = "long"
+        elif p_short >= confidence:
+            side = "short"
+        else:
+            continue
+
+        raw_pos = ts_to_raw_pos.get(signal_ts)
+        if raw_pos is None or raw_pos + look_ahead >= len(raw_df):
+            continue
+
+        # ATR at entry uses the entry candle and its `atr_period` predecessors.
+        atr_start = raw_pos - atr_period
+        if atr_start < 0:
+            skipped_no_atr += 1
+            continue
+        entry_atr = compute_atr(
+            decimal_highs[atr_start : raw_pos + 1],
+            decimal_lows[atr_start : raw_pos + 1],
+            decimal_closes[atr_start : raw_pos + 1],
+            period=atr_period,
+        )
+        if entry_atr is None:
+            skipped_no_atr += 1
+            continue
+
+        entry_price_f = float(row["close"])
+        entry_price = Decimal(str(entry_price_f))
+        engine_side = "Buy" if side == "long" else "Sell"
+
+        levels = build_initial_levels(
+            side=engine_side,
+            entry_price=entry_price,
+            sl_pct=Decimal(str(sl_pct)),
+            tp_pct=Decimal(str(tp_pct)),
+            include_fixed_tp=trailing.keep_fixed_tp,
+        )
+        state = initial_exit_state(
+            side=engine_side,
+            qty=Decimal(str(order_qty)),
+            entry_price=entry_price,
+            hard_stop=levels.hard_stop,
+            fixed_take_profit=levels.fixed_take_profit,
+            entry_atr=entry_atr,
+            last_update_candle_time=str(signal_ts),
+        )
+        prev_active = False
+
+        outcome: Literal["tp", "sl", "trailing", "timeout"] = "timeout"
+        exit_offset = look_ahead - 1
+        exit_price_f = float(raw_closes[raw_pos + 1 + exit_offset])
+
+        for step in range(look_ahead):
+            candle_pos = raw_pos + 1 + step
+            window_start = max(0, candle_pos - atr_period)
+            current_atr = compute_atr(
+                decimal_highs[window_start : candle_pos + 1],
+                decimal_lows[window_start : candle_pos + 1],
+                decimal_closes[window_start : candle_pos + 1],
+                period=atr_period,
+            )
+            decision = update_exit_state_with_candle(
+                state,
+                trailing,
+                candle_high=decimal_highs[candle_pos],
+                candle_low=decimal_lows[candle_pos],
+                candle_close=decimal_closes[candle_pos],
+                current_atr=current_atr,
+                candle_time=str(raw_ts_series[candle_pos]),
+            )
+            state = decision.state
+            if state.trailing_active and not prev_active:
+                trailing_activations += 1
+                prev_active = True
+
+            if decision.should_close:
+                exit_offset = step
+                assert decision.exit_price is not None
+                exit_price_f = float(decision.exit_price)
+                if decision.reason == "hard_sl":
+                    outcome = "sl"
+                elif decision.reason == "fixed_tp":
+                    outcome = "tp"
+                elif decision.reason == "trailing_stop":
+                    outcome = "trailing"
+                else:
+                    outcome = "timeout"
+                break
+
+        direction = 1.0 if side == "long" else -1.0
+        gross_pnl = direction * (exit_price_f - entry_price_f) * order_qty
+        commission = 2.0 * commission_pct * entry_price_f * order_qty
+        net_pnl = gross_pnl - commission
+
+        exit_raw_pos = raw_pos + 1 + exit_offset
+        block_until = raw_ts_series[exit_raw_pos]
+
+        trades.append(Trade(
+            side=side,
+            entry_price=entry_price_f,
+            exit_price=exit_price_f,
+            outcome=outcome,
+            pnl_usdt=net_pnl,
+            duration_candles=exit_offset + 1,
+        ))
+
+    return SimulationResult(
+        trades=trades,
+        skipped_no_atr=skipped_no_atr,
+        trailing_activations=trailing_activations,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +458,11 @@ def _print_report(
     tp_pct: float,
     sl_pct: float,
     look_ahead: int,
+    *,
+    exit_mode: str = "fixed",
+    trailing_cfg: AtrTrailingConfig | None = None,
+    skipped_no_atr: int = 0,
+    trailing_activations: int = 0,
 ) -> None:
     bar = "═" * 60
 
@@ -275,13 +472,22 @@ def _print_report(
     print(f"  {bar}")
     print(f"  Data   : {data_path.name}")
     print(f"  Model  : {model_path.name}")
-    print(f"  Config : confidence={confidence}  TP={tp_pct*100:.2f}%  SL={sl_pct*100:.2f}%  "
-          f"look_ahead={look_ahead}")
+    print(f"  Config : exit_mode={exit_mode}  confidence={confidence}  TP={tp_pct*100:.2f}%  "
+          f"SL={sl_pct*100:.2f}%  look_ahead={look_ahead}")
+    if exit_mode == "atr_trailing" and trailing_cfg is not None:
+        print(
+            f"  Trail  : activation={float(trailing_cfg.activation_pct)*100:.2f}%  "
+            f"atr_mult={float(trailing_cfg.atr_mult)}  atr_period={trailing_cfg.atr_period}  "
+            f"min_lock={float(trailing_cfg.min_lock_pct)*100:.2f}%  "
+            f"keep_fixed_tp={trailing_cfg.keep_fixed_tp}"
+        )
     print(f"  {bar}")
 
     if not trades:
         print("  Сделки не сгенерированы.")
         print("  → Попробуй снизить --confidence или проверь alignment модели/данных.")
+        if exit_mode == "atr_trailing":
+            print(f"  skipped (no ATR history): {skipped_no_atr}")
         print(f"  {bar}\n")
         return
 
@@ -313,6 +519,7 @@ def _print_report(
 
     tp_n = sum(1 for t in trades if t.outcome == "tp")
     sl_n = sum(1 for t in trades if t.outcome == "sl")
+    trail_n = sum(1 for t in trades if t.outcome == "trailing")
     to_n = sum(1 for t in trades if t.outcome == "timeout")
 
     avg_dur = np.mean([t.duration_candles for t in trades])
@@ -346,6 +553,11 @@ def _print_report(
     _section("ИСХОДЫ СДЕЛОК")
     print(f"  TP достигнут        : {tp_n}  ({tp_n/len(trades)*100:.1f}%)")
     print(f"  SL достигнут        : {sl_n}  ({sl_n/len(trades)*100:.1f}%)")
+    if exit_mode == "atr_trailing":
+        print(f"  Trailing exit       : {trail_n}  ({trail_n/len(trades)*100:.1f}%)")
+        print(f"  Trailing activated  : {trailing_activations}  "
+              f"(trades that crossed activation threshold)")
+        print(f"  Skipped (no ATR)    : {skipped_no_atr}")
     print(f"  Timeout (no touch)  : {to_n}  ({to_n/len(trades)*100:.1f}%)")
 
     _section("СТАТИСТИКА СДЕЛОК")
@@ -415,6 +627,30 @@ def _parse_args() -> argparse.Namespace:
         "--interval-minutes", type=int, default=5,
         help="Таймфрейм свечей в минутах (только для отображения длительности).",
     )
+    p.add_argument(
+        "--exit-mode", type=str, choices=("fixed", "atr_trailing"), default="fixed",
+        help="Exit policy: fixed TP/SL (default) or ATR trailing stop.",
+    )
+    p.add_argument(
+        "--trailing-activation-pct", type=float, default=0.004,
+        help="Profit threshold (fraction) at which trailing activates.",
+    )
+    p.add_argument(
+        "--trailing-atr-mult", type=float, default=1.4,
+        help="Multiplier for ATR distance between best price and trailing stop.",
+    )
+    p.add_argument(
+        "--trailing-atr-period", type=int, default=14,
+        help="ATR lookback period (number of closed candles).",
+    )
+    p.add_argument(
+        "--trailing-min-lock-pct", type=float, default=0.0015,
+        help="Minimum profit lock (fraction of entry) enforced once trailing activates.",
+    )
+    p.add_argument(
+        "--trailing-keep-fixed-tp", action="store_true",
+        help="In atr_trailing mode, also attach the fixed TP from --tp-pct.",
+    )
     return p.parse_args()
 
 
@@ -443,22 +679,51 @@ def main() -> int:
     n_short_signals = int((probs[:, 1] >= args.confidence).sum())
     print(f"[backtest] Сигналов выше порога: long={n_long_signals}, short={n_short_signals}")
 
-    print("[backtest] Симуляция сделок...")
-    trades = _simulate(
-        raw_df,
-        enriched,
-        probs,
-        confidence=args.confidence,
-        tp_pct=args.tp_pct,
-        sl_pct=args.sl_pct,
-        look_ahead=args.look_ahead,
-        order_qty=args.order_qty,
-        commission_pct=args.commission,
-    )
-    print(f"[backtest] Симулировано {len(trades)} сделок (без перекрытий).")
+    print(f"[backtest] Симуляция сделок (exit_mode={args.exit_mode})...")
+    if args.exit_mode == "atr_trailing":
+        trailing_cfg = AtrTrailingConfig(
+            enabled=True,
+            activation_pct=Decimal(str(args.trailing_activation_pct)),
+            atr_mult=Decimal(str(args.trailing_atr_mult)),
+            atr_period=args.trailing_atr_period,
+            min_lock_pct=Decimal(str(args.trailing_min_lock_pct)),
+            keep_fixed_tp=bool(args.trailing_keep_fixed_tp),
+        )
+        trailing_cfg.validate()
+        result = _simulate_atr_trailing(
+            raw_df,
+            enriched,
+            probs,
+            confidence=args.confidence,
+            tp_pct=args.tp_pct,
+            sl_pct=args.sl_pct,
+            look_ahead=args.look_ahead,
+            order_qty=args.order_qty,
+            commission_pct=args.commission,
+            trailing=trailing_cfg,
+        )
+    else:
+        trailing_cfg = None
+        result = _simulate_fixed(
+            raw_df,
+            enriched,
+            probs,
+            confidence=args.confidence,
+            tp_pct=args.tp_pct,
+            sl_pct=args.sl_pct,
+            look_ahead=args.look_ahead,
+            order_qty=args.order_qty,
+            commission_pct=args.commission,
+        )
+    print(f"[backtest] Симулировано {len(result.trades)} сделок (без перекрытий).")
+    if args.exit_mode == "atr_trailing":
+        print(
+            f"[backtest] Trailing activations: {result.trailing_activations}  "
+            f"Skipped (no ATR): {result.skipped_no_atr}"
+        )
 
     _print_report(
-        trades,
+        result.trades,
         initial_balance=args.initial_balance,
         interval_minutes=args.interval_minutes,
         data_path=args.data_path,
@@ -467,6 +732,10 @@ def main() -> int:
         tp_pct=args.tp_pct,
         sl_pct=args.sl_pct,
         look_ahead=args.look_ahead,
+        exit_mode=args.exit_mode,
+        trailing_cfg=trailing_cfg,
+        skipped_no_atr=result.skipped_no_atr,
+        trailing_activations=result.trailing_activations,
     )
 
     return 0
