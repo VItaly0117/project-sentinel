@@ -3,29 +3,34 @@
 Approximate progress percentages. These numbers reflect the current MVP repository state, not the full target platform from the tech spec.
 
 ## MVP progress
-- Trading runtime safety and module split: 88%
-- Runtime persistence and restart safety: 80%
-- Operator smoke-run clarity: 85%
-- Runtime automated tests: 90% (30 tests, preflight/reconciliation/storage/strategy coverage)
-- Strategy mode options (xgb + deterministic rule-based): 95% (both modes working, tests green)
-- Training pipeline structure: 92%
-- Training reproducibility and auditability: 88%
-- Training automated tests: 88% (17 tests passing)
-- Training data-source definition and onboarding clarity: 90%
-- Training data ingestion and normalization MVP: 88%
-- First reproducible baseline artifact generation: 10% (infrastructure ready, data/run pending)
+- Trading runtime safety and module split: 92%
+- Runtime persistence and restart safety: 90% (now includes trailing-stop state persistence)
+- Operator smoke-run clarity: 90% (demo smoke-order tool added)
+- Runtime automated tests: 95% (30 preflight + 24 runtime + 513 expanded runtime tests for exits)
+- Strategy mode options (xgb + deterministic rule-based): 98% (both modes + ATR trailing-stops)
+- Exit strategy options (fixed TP/SL + ATR trailing-stops): 95% (full runtime + backtest integration)
+- Training pipeline structure: 95%
+- Training reproducibility and auditability: 92%
+- Training automated tests: 90% (17 core tests + backtest extensions)
+- Training data-source definition and onboarding clarity: 92%
+- Training data ingestion and normalization MVP: 90%
+- Baseline artifact generation & research: 85% (Binance 6mo baseline frozen, backtest v2 reports)
+- Backtester with realistic costs: 90% (multi-year matrix, fee scenarios, Bybit-native)
 - Claude Code and Obsidian handoff readiness: 92%
 - Claude Code working setup readiness across machines: 75%
 
 ## Toward multi-bot / platform (not hackathon scope)
 
-### Built on origin/main (7b35a2a)
-- Single-bot research/runtime MVP versus target multi-bot platform: 35%
+### Built on origin/main (c000b4f, 2026-04-26)
+- Single-bot research/runtime MVP versus target multi-bot platform: 45%
 - Docker containerization and docker-compose orchestration: **85%** (hardened 2-bot stack, healthchecks, log rotation, non-root user)
 - Shared PostgreSQL persistence backend: **80%** (schema-isolated per bot, backward-compat SQLite fallback)
 - Read-only API layer and dashboard: **70%** (health/status/trades/events/pnl, storage_backend exposure, single-file HTML)
 - Per-bot identity via BOT_ID and DATABASE_SCHEMA: **80%** (working in docker-compose, per-schema isolation)
-- VPS deployment readiness: **75%** (docker-compose automation, healthchecks, log rotation, docs)
+- VPS deployment readiness: **80%** (docker-compose automation, healthchecks, log rotation, deploy helpers, docs)
+- Backtesting infrastructure: **90%** (backtest v2, realistic costs, multi-year Bybit matrix, scenario reports)
+- Exit strategy research: **85%** (ATR trailing-stops, state persistence, backtest integration, 400+ exit tests)
+- Demo tooling: **85%** (smoke-order tool, demo-tuning profiles, operator guards)
 - Multi-bot orchestration and auto-scaling: **0%** (would need Kubernetes / multi-host support)
 - Live-mode admin panel (write-enabled): **0%** (API is read-only only)
 - Redis caching layer: **0%**
