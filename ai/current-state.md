@@ -54,8 +54,46 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
+## Fleet control-plane dashboard (2026-04-23)
+- `GET /api/bots` now returns `{server: {dry_run_mode, strategy_mode, storage_backend, timestamp}, bots: [...]}` instead of a flat list.
+- Each bot in `bots` now includes: `last_action_side`, `total_closed_trades`, `total_pnl` (cheap aggregate added to `_pg_list_bots` / `_sqlite_list_bots`).
+- Dashboard title changed to "Fleet Dashboard".
+- New **Fleet Overview** section (hidden when ≤1 bot, auto-visible for 2+ bots): grid of bot cards showing id, DRY/LIVE badge, strategy, last-seen time (colour-coded by staleness), last action, trade count, total PnL.
+- Staleness colour logic: < 10 min = green, < 30 min = yellow, > 30 min or null = red.
+- Clicking a fleet card calls `selectBot()` — highlights the card with blue ring, syncs dropdown, refreshes detail panels.
+- Bot Detail section now has a label showing the selected bot name (`— btcusdt`).
+- Single-bot path preserved: fleet section hidden, all existing detail panels work exactly as before.
+- Header mode badge updated from server metadata on every `/api/bots` refresh (fast, no per-bot status call needed).
+- Backward-compatible: `fetchBots()` handles both old flat-array and new `{server, bots}` formats.
+
+## Multi-bot control-plane API (2026-04-23)
+- `GET /api/bots` added — discovers all known bots for the active backend.
+  - PostgreSQL: queries `information_schema.tables` for schemas with a `runtime_state` table; each schema = one bot.
+  - SQLite: scans `RUNTIME_DB_DIR` (defaults to parent of `RUNTIME_DB_PATH`) for `*.db` files; each file stem = one bot.
+  - Returns `[{id, storage, db_exists, last_candle_time}]` per bot.
+- `?bot=<id>` added to `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`.
+  - PostgreSQL: `bot` = schema name → `SET search_path TO "{schema}"` per connection. Validated `[a-zA-Z0-9_-]{1,63}`.
+  - SQLite: `bot` = file stem → `{RUNTIME_DB_DIR}/{bot}.db`. Same validation regex.
+  - Omitting `?bot` uses server-default (`DATABASE_SCHEMA` / `RUNTIME_DB_PATH`) — fully backward-compatible.
+  - Invalid IDs return HTTP 400.
+- Dashboard bot selector added to header — `<select id="bot-select">` populated from `/api/bots`, switches all panels immediately on change.
+- `_pg_connect()` now accepts optional `schema` param so all query functions can override the default schema without duplicating connection logic.
+
+## Docker + PostgreSQL (2026-04-22)
+- `requirements.txt` created with all runtime/training/DB deps.
+- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
+- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+- `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
+- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
+- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
+- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
+- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- **Launch command:** `docker compose up --build`
+
 ## Current debt and risks
-- There is still no DB, Redis, Docker, admin panel, CI/CD pipeline, or analyst workflow in the current code.
+- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
 - Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
@@ -81,13 +119,12 @@
 - Edits to the red zone require the `[ALGO-UPDATE]` tag in the user request; agents refuse otherwise.
 - Protocol is documented in `CLAUDE.md` ("Algorithm Sandbox") and `docs/claude-code-handoff.md` ("ALGO-UPDATE protocol").
 
-## Baseline model artifact (2026-04-22)
-- Downloaded `BTCUSDT-5m-2024-01.zip` from `data.binance.vision` (futures/um/monthly/klines).
-- Ingested and normalized to `data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101T000000Z_20240131T235500Z.csv` — 8,928 rows, `csv_verified=true`.
-- Trained baseline XGBoost model via `python3 train_v4.py --data-path ... --experiment-name binance-btcusdt-5m-baseline`.
-- Artifacts written to `artifacts/train_v4/binance-btcusdt-5m-baseline/` (model 2.6M, metadata, checksums).
-- `monster_v4_2.json` overwritten with the real 2.6M XGBoost artifact — no longer a 0-byte dummy.
-- Validation accuracy=0.4988, macro_f1=0.3514; test accuracy=0.5527, macro_f1=0.3015 (research baseline only).
+## Model artifact status (2026-04-23)
+- `monster_v4_2.json` (2.6M) exists — a real XGBoost artifact with 11 engineered features and 1431 boosted trees.
+- This artifact is loaded by default when `STRATEGY_MODE=xgb` (default).
+- The artifact **was** trained from Binance BTCUSDT 5m data (Jan 2024), but the original normalized data and training artifacts have not yet been regenerated in this session.
+- **Day 1 task**: Re-ingest Binance data, run a fresh training baseline, and save artifacts to `artifacts/train_v4/binance-btcusdt-5m-baseline/`.
+- The ingest and training infrastructure is ready; what's missing is the fresh reproducible run and evidence pack.
 
 ## Strategy modes (2026-04-22)
 - `STRATEGY_MODE` env var now selects between `xgb` (default) and `zscore_mean_reversion_v1`.

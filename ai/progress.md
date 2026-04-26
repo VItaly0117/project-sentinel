@@ -19,7 +19,7 @@ Approximate progress percentages. These numbers reflect the current MVP reposito
 ## Target-system progress
 - Single-bot research/runtime MVP versus target platform: 30%
 - Multi-bot orchestration and centralized control: 5%
-- Admin panel and operator UI: 30%  ← read-only API + dashboard scaffolded
+- Admin panel and operator UI: 55%  ← fleet overview + bot detail + bot switching
 - Shared infra such as DB/Redis/Docker/CI-CD: 10%
 - Analyst and higher-level automation layers: 0%
 
