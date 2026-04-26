@@ -1,0 +1,148 @@
+{
+  "breakdowns": {
+    "by_month": {
+      "2026-01": {
+        "net_pnl": -15.214561787587126,
+        "trades": 96,
+        "win_rate": 32.29166666666667,
+        "wins": 31
+      },
+      "2026-02": {
+        "net_pnl": -39.85908918754254,
+        "trades": 240,
+        "win_rate": 28.749999999999996,
+        "wins": 69
+      },
+      "2026-03": {
+        "net_pnl": -23.18263351824688,
+        "trades": 172,
+        "win_rate": 31.976744186046513,
+        "wins": 55
+      },
+      "2026-04": {
+        "net_pnl": -6.41241711214508,
+        "trades": 77,
+        "win_rate": 35.064935064935064,
+        "wins": 27
+      }
+    },
+    "by_outcome": {
+      "sl": {
+        "net_pnl": -183.03863814386168,
+        "trades": 343
+      },
+      "timeout": {
+        "net_pnl": 2.0435951361236855,
+        "trades": 116
+      },
+      "tp": {
+        "net_pnl": 96.32634140221637,
+        "trades": 126
+      },
+      "trailing": {
+        "net_pnl": 0.0,
+        "trades": 0
+      }
+    },
+    "by_side": {
+      "long": {
+        "net_pnl": -44.13325323872432,
+        "trades": 344,
+        "win_rate": 31.976744186046513
+      },
+      "short": {
+        "net_pnl": -40.5354483667973,
+        "trades": 241,
+        "win_rate": 29.87551867219917
+      }
+    },
+    "by_year": {
+      "2026": {
+        "net_pnl": -84.66870160552156,
+        "trades": 585,
+        "win_rate": 31.11111111111111,
+        "wins": 182
+      }
+    }
+  },
+  "config": {
+    "confidence": 0.51,
+    "custom_fee_pct": 0.00055,
+    "data_path": "data/normalized/bybit/BTCUSDT/5m/bybit_BTCUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "date_end": "2026-04-26T00:00:00Z",
+    "date_start": "2026-01-01T00:00:00Z",
+    "exit_mode": "fixed",
+    "fee_mode": "taker",
+    "funding_mode": "none",
+    "initial_balance": 1000.0,
+    "interval_minutes": 5,
+    "look_ahead": 36,
+    "maker_fee_pct": 0.0002,
+    "model_path": "monster_v4_2.json",
+    "order_qty": 0.001,
+    "same_candle_policy": "conservative",
+    "sl_pct": 0.006,
+    "slippage_bps": 2.0,
+    "source": "bybit",
+    "spread_bps": 2.0,
+    "symbol": "BTCUSDT",
+    "taker_fee_pct": 0.00055,
+    "tp_pct": 0.012,
+    "trailing": null
+  },
+  "data_quality": {
+    "duplicate_timestamps_count": 0,
+    "expected_5m_rows": 33120,
+    "gaps_first_5": [],
+    "missing_candles_count": 0,
+    "row_count": 33120,
+    "timestamp_max_utc": "2026-04-25T23:55:00+00:00",
+    "timestamp_min_utc": "2026-01-01T00:00:00+00:00"
+  },
+  "generated_at_utc": "2026-04-26T14:46:08.828091+00:00",
+  "outcomes": {
+    "skipped_no_atr": 0,
+    "sl": 343,
+    "timeout": 116,
+    "tp": 126,
+    "trailing": 0,
+    "trailing_activated": 0
+  },
+  "signals": {
+    "long_signals_above_threshold": 2185,
+    "no_signal_rows": 28516,
+    "short_signals_above_threshold": 2132,
+    "total_signal_rows": 32833
+  },
+  "summary": {
+    "avg_duration_candles": 15.791452991452992,
+    "avg_duration_minutes": 78.95726495726495,
+    "avg_loss_net": -0.48608725767105293,
+    "avg_trade_net": -0.1447328232573019,
+    "avg_win_net": 0.6111234243731468,
+    "best_trade_net": 1.0209153094322176,
+    "expectancy_net": -0.1447328232573019,
+    "fees_paid": 46.85600583272023,
+    "final_balance": 915.3312983944784,
+    "funding_paid": 0.0,
+    "long_net_pnl": -44.13325323872432,
+    "long_trades": 344,
+    "longest_losing_streak": 15,
+    "max_drawdown_pct": 8.496184261141774,
+    "max_drawdown_usdt": 84.96184261141775,
+    "profit_factor_net": 0.5677812358891814,
+    "short_net_pnl": -40.5354483667973,
+    "short_trades": 241,
+    "sl_count": 343,
+    "spread_slippage_cost_estimate": 25.55782026036038,
+    "timeout_count": 116,
+    "total_gross_pnl": -37.81269577280139,
+    "total_net_pnl": -84.66870160552162,
+    "tp_count": 126,
+    "trades_total": 585,
+    "trailing_count": 0,
+    "turnover_notional": 42593.918733700004,
+    "win_rate_net": 31.11111111111111,
+    "worst_trade_net": -0.7207170751479199
+  }
+}

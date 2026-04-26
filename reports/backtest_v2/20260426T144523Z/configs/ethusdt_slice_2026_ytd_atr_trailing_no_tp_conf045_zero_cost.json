@@ -1,0 +1,30 @@
+{
+  "symbol": "ETHUSDT",
+  "source": "bybit",
+  "data_path": "data/normalized/bybit/ETHUSDT/5m/bybit_ETHUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+  "interval_minutes": 5,
+  "model_path": "monster_v4_2.json",
+  "initial_balance": 1000.0,
+  "order_qty": 0.001,
+  "tp_pct": 0.012,
+  "sl_pct": 0.006,
+  "look_ahead": 36,
+  "confidence": 0.45,
+  "variant": {
+    "label": "atr_trailing_no_tp",
+    "exit_mode": "atr_trailing",
+    "keep_fixed_tp": false
+  },
+  "cost_profile": {
+    "name": "zero_cost",
+    "taker_fee_pct": 0.0,
+    "spread_bps": 0.0,
+    "slippage_bps": 0.0
+  },
+  "time_slice": {
+    "label": "slice_2026_ytd",
+    "date_start": "2026-01-01T00:00:00Z",
+    "date_end": "2026-04-26T00:00:00Z"
+  },
+  "same_candle_policy": "conservative"
+}

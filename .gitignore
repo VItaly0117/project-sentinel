@@ -7,3 +7,12 @@ __pycache__/
 data/
 artifacts/*
 !artifacts/.gitkeep
+
+# Backtest v2 — per-trade and per-equity CSVs are huge (hundreds of MB).
+# Keep summary.csv, manifest.json, reports_json/, README — those are small
+# and constitute the auditable evidence pack.
+reports/backtest_v2/*/trades/
+reports/backtest_v2/*/equity/
+
+# Demo handoff tarballs (built locally, distributed out-of-band)
+handoff/

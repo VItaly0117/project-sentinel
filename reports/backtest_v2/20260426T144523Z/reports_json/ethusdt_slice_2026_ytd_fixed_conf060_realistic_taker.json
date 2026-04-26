@@ -1,0 +1,148 @@
+{
+  "breakdowns": {
+    "by_month": {
+      "2026-01": {
+        "net_pnl": -0.28233887740692704,
+        "trades": 95,
+        "win_rate": 37.89473684210527,
+        "wins": 36
+      },
+      "2026-02": {
+        "net_pnl": -0.5537828644353713,
+        "trades": 215,
+        "win_rate": 33.95348837209302,
+        "wins": 73
+      },
+      "2026-03": {
+        "net_pnl": -0.1835877157118546,
+        "trades": 98,
+        "win_rate": 35.714285714285715,
+        "wins": 35
+      },
+      "2026-04": {
+        "net_pnl": -0.3383801140655626,
+        "trades": 58,
+        "win_rate": 27.586206896551722,
+        "wins": 16
+      }
+    },
+    "by_outcome": {
+      "sl": {
+        "net_pnl": -4.779035906890284,
+        "trades": 285
+      },
+      "timeout": {
+        "net_pnl": 0.06351036724055749,
+        "trades": 40
+      },
+      "tp": {
+        "net_pnl": 3.357435968030012,
+        "trades": 141
+      },
+      "trailing": {
+        "net_pnl": 0.0,
+        "trades": 0
+      }
+    },
+    "by_side": {
+      "long": {
+        "net_pnl": -1.5596057865513544,
+        "trades": 380,
+        "win_rate": 31.57894736842105
+      },
+      "short": {
+        "net_pnl": 0.20151621493163918,
+        "trades": 86,
+        "win_rate": 46.51162790697674
+      }
+    },
+    "by_year": {
+      "2026": {
+        "net_pnl": -1.3580895716197148,
+        "trades": 466,
+        "win_rate": 34.33476394849785,
+        "wins": 160
+      }
+    }
+  },
+  "config": {
+    "confidence": 0.6,
+    "custom_fee_pct": 0.00055,
+    "data_path": "data/normalized/bybit/ETHUSDT/5m/bybit_ETHUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "date_end": "2026-04-26T00:00:00Z",
+    "date_start": "2026-01-01T00:00:00Z",
+    "exit_mode": "fixed",
+    "fee_mode": "taker",
+    "funding_mode": "none",
+    "initial_balance": 1000.0,
+    "interval_minutes": 5,
+    "look_ahead": 36,
+    "maker_fee_pct": 0.0002,
+    "model_path": "monster_v4_2.json",
+    "order_qty": 0.001,
+    "same_candle_policy": "conservative",
+    "sl_pct": 0.006,
+    "slippage_bps": 2.0,
+    "source": "bybit",
+    "spread_bps": 2.0,
+    "symbol": "ETHUSDT",
+    "taker_fee_pct": 0.00055,
+    "tp_pct": 0.012,
+    "trailing": null
+  },
+  "data_quality": {
+    "duplicate_timestamps_count": 0,
+    "expected_5m_rows": 33120,
+    "gaps_first_5": [],
+    "missing_candles_count": 0,
+    "row_count": 33120,
+    "timestamp_max_utc": "2026-04-25T23:55:00+00:00",
+    "timestamp_min_utc": "2026-01-01T00:00:00+00:00"
+  },
+  "generated_at_utc": "2026-04-26T14:50:39.465942+00:00",
+  "outcomes": {
+    "skipped_no_atr": 0,
+    "sl": 285,
+    "timeout": 40,
+    "tp": 141,
+    "trailing": 0,
+    "trailing_activated": 0
+  },
+  "signals": {
+    "long_signals_above_threshold": 1617,
+    "no_signal_rows": 30605,
+    "short_signals_above_threshold": 611,
+    "total_signal_rows": 32833
+  },
+  "summary": {
+    "avg_duration_candles": 10.733905579399142,
+    "avg_duration_minutes": 53.66952789699571,
+    "avg_loss_net": -0.015922021967305983,
+    "avg_trade_net": -0.0029143553039049684,
+    "avg_win_net": 0.02196280718984947,
+    "best_trade_net": 0.03547442645849072,
+    "expectancy_net": -0.0029143553039049684,
+    "fees_paid": 1.1617177095554017,
+    "final_balance": 998.6419104283802,
+    "funding_paid": 0.0,
+    "long_net_pnl": -1.5596057865513544,
+    "long_trades": 380,
+    "longest_losing_streak": 16,
+    "max_drawdown_pct": 0.13906705528802768,
+    "max_drawdown_usdt": 1.3907159253897134,
+    "profit_factor_net": 0.7212539196619095,
+    "short_net_pnl": 0.20151621493163918,
+    "short_trades": 86,
+    "sl_count": 285,
+    "spread_slippage_cost_estimate": 0.6336642445682792,
+    "timeout_count": 40,
+    "total_gross_pnl": -0.19637186206431373,
+    "total_net_pnl": -1.3580895716197152,
+    "tp_count": 141,
+    "trades_total": 466,
+    "trailing_count": 0,
+    "turnover_notional": 1056.625892722,
+    "win_rate_net": 34.33476394849785,
+    "worst_trade_net": -0.024998747126729295
+  }
+}

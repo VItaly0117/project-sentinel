@@ -1,0 +1,148 @@
+{
+  "breakdowns": {
+    "by_month": {
+      "2026-01": {
+        "net_pnl": -19.05353494204116,
+        "trades": 206,
+        "win_rate": 34.95145631067961,
+        "wins": 72
+      },
+      "2026-02": {
+        "net_pnl": -64.56926718185834,
+        "trades": 461,
+        "win_rate": 31.019522776572668,
+        "wins": 143
+      },
+      "2026-03": {
+        "net_pnl": -33.98920864976729,
+        "trades": 358,
+        "win_rate": 37.150837988826815,
+        "wins": 133
+      },
+      "2026-04": {
+        "net_pnl": -3.4719123592034573,
+        "trades": 190,
+        "win_rate": 45.78947368421053,
+        "wins": 87
+      }
+    },
+    "by_outcome": {
+      "sl": {
+        "net_pnl": -328.91711060567485,
+        "trades": 614
+      },
+      "timeout": {
+        "net_pnl": 8.917626650154347,
+        "trades": 343
+      },
+      "tp": {
+        "net_pnl": 198.91556082265026,
+        "trades": 258
+      },
+      "trailing": {
+        "net_pnl": 0.0,
+        "trades": 0
+      }
+    },
+    "by_side": {
+      "long": {
+        "net_pnl": -87.4666938294675,
+        "trades": 832,
+        "win_rate": 35.21634615384615
+      },
+      "short": {
+        "net_pnl": -33.617229303402745,
+        "trades": 383,
+        "win_rate": 37.0757180156658
+      }
+    },
+    "by_year": {
+      "2026": {
+        "net_pnl": -121.08392313287032,
+        "trades": 1215,
+        "win_rate": 35.80246913580247,
+        "wins": 435
+      }
+    }
+  },
+  "config": {
+    "confidence": 0.3,
+    "custom_fee_pct": 0.00055,
+    "data_path": "data/normalized/bybit/BTCUSDT/5m/bybit_BTCUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "date_end": "2026-04-26T00:00:00Z",
+    "date_start": "2026-01-01T00:00:00Z",
+    "exit_mode": "fixed",
+    "fee_mode": "taker",
+    "funding_mode": "none",
+    "initial_balance": 1000.0,
+    "interval_minutes": 5,
+    "look_ahead": 36,
+    "maker_fee_pct": 0.0002,
+    "model_path": "monster_v4_2.json",
+    "order_qty": 0.001,
+    "same_candle_policy": "conservative",
+    "sl_pct": 0.006,
+    "slippage_bps": 2.0,
+    "source": "bybit",
+    "spread_bps": 2.0,
+    "symbol": "BTCUSDT",
+    "taker_fee_pct": 0.00055,
+    "tp_pct": 0.012,
+    "trailing": null
+  },
+  "data_quality": {
+    "duplicate_timestamps_count": 0,
+    "expected_5m_rows": 33120,
+    "gaps_first_5": [],
+    "missing_candles_count": 0,
+    "row_count": 33120,
+    "timestamp_max_utc": "2026-04-25T23:55:00+00:00",
+    "timestamp_min_utc": "2026-01-01T00:00:00+00:00"
+  },
+  "generated_at_utc": "2026-04-26T14:45:35.009591+00:00",
+  "outcomes": {
+    "skipped_no_atr": 0,
+    "sl": 614,
+    "timeout": 343,
+    "tp": 258,
+    "trailing": 0,
+    "trailing_activated": 0
+  },
+  "signals": {
+    "long_signals_above_threshold": 12883,
+    "no_signal_rows": 5482,
+    "short_signals_above_threshold": 14468,
+    "total_signal_rows": 32833
+  },
+  "summary": {
+    "avg_duration_candles": 19.047736625514403,
+    "avg_duration_minutes": 95.23868312757202,
+    "avg_loss_net": -0.46257592716801105,
+    "avg_trade_net": -0.0996575499035969,
+    "avg_win_net": 0.5510926438119043,
+    "best_trade_net": 1.0216589481389087,
+    "expectancy_net": -0.0996575499035969,
+    "fees_paid": 97.91606327680486,
+    "final_balance": 878.9160768671297,
+    "funding_paid": 0.0,
+    "long_net_pnl": -87.4666938294675,
+    "long_trades": 832,
+    "longest_losing_streak": 14,
+    "max_drawdown_pct": 12.537666835393157,
+    "max_drawdown_usdt": 125.37666835393156,
+    "profit_factor_net": 0.6644101221637667,
+    "short_net_pnl": -33.617229303402745,
+    "short_trades": 383,
+    "sl_count": 614,
+    "spread_slippage_cost_estimate": 53.40876450902356,
+    "timeout_count": 343,
+    "total_gross_pnl": -23.16785985606539,
+    "total_net_pnl": -121.08392313287024,
+    "tp_count": 258,
+    "trades_total": 1215,
+    "trailing_count": 0,
+    "turnover_notional": 89023.37153357,
+    "win_rate_net": 35.80246913580247,
+    "worst_trade_net": -0.7207170751479199
+  }
+}
