@@ -3,32 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sentinel Dashboard</title>
+  <title>Sentinel Fleet Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace; }
-    .pnl-pos { color: #34d399; }
-    .pnl-neg { color: #f87171; }
+    .pnl-pos  { color: #34d399; }
+    .pnl-neg  { color: #f87171; }
     .pnl-zero { color: #6b7280; }
-    .badge-buy  { background:#064e3b; color:#34d399; }
-    .badge-sell { background:#4c1d1d; color:#f87171; }
-    .badge-info { background:#1e3a5f; color:#93c5fd; }
-    .badge-warn { background:#3f2c0a; color:#fcd34d; }
-    .badge-error{ background:#4c1d1d; color:#f87171; }
+    .badge-buy   { background:#064e3b; color:#34d399; }
+    .badge-sell  { background:#4c1d1d; color:#f87171; }
+    .badge-info  { background:#1e3a5f; color:#93c5fd; }
+    .badge-warn  { background:#3f2c0a; color:#fcd34d; }
+    .badge-error { background:#4c1d1d; color:#f87171; }
     .badge-closed{ background:#064e3b; color:#6ee7b7; }
     .badge-opened{ background:#1f2937; color:#d1d5db; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinning { animation: spin 1s linear infinite; }
+    /* Fleet card selection */
+    .fleet-card { transition: border-color 0.15s, background 0.15s; }
+    .fleet-card:hover { border-color: #374151 !important; }
+    .fleet-card.selected {
+      border-color: #1d4ed8 !important;
+      box-shadow: 0 0 0 1px #1d4ed8;
+      background: rgba(29,78,216,0.07);
+    }
+    /* Filter buttons */
+    .filter-btn {
+      padding: 2px 8px; border-radius: 4px; font-size: 11px;
+      background: #1f2937; color: #6b7280; cursor: pointer;
+    }
+    .filter-btn:hover { background: #374151; color: #d1d5db; }
+    .active-btn { background: #374151 !important; color: #e5e7eb !important; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 
-  <!-- ── Header ────────────────────────────────────────────── -->
+  <!-- ── Header ───────────────────────────────────────────────── -->
   <header class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <span class="text-sm font-bold tracking-[0.2em] text-white">SENTINEL</span>
       <span class="text-gray-600">▸</span>
-      <span class="text-gray-400 text-xs">Trading Dashboard</span>
+      <span class="text-gray-400 text-xs">Fleet Dashboard</span>
+      <span class="text-gray-700 select-none">|</span>
+      <label for="bot-select" class="text-gray-600 text-xs select-none">bot</label>
+      <select id="bot-select" onchange="selectBot(this.value)"
+        class="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded px-2 py-1
+               focus:outline-none focus:border-gray-600 cursor-pointer min-w-[130px]">
+        <option value="">default</option>
+      </select>
     </div>
     <div class="flex items-center gap-4">
       <span id="mode-badge" class="px-2 py-0.5 rounded text-xs font-bold tracking-wide bg-gray-800 text-gray-500">--</span>
@@ -40,7 +62,24 @@
 
   <main class="p-6 space-y-5 max-w-7xl mx-auto">
 
-    <!-- ── Row 1: Status + PnL ───────────────────────────────── -->
+    <!-- ── Fleet Overview (visible when ≥2 bots) ────────────────── -->
+    <section id="fleet-section" class="hidden">
+      <div class="flex items-center gap-3 mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-gray-500">Fleet Overview</h2>
+        <span id="fleet-count" class="text-gray-700 text-xs">—</span>
+      </div>
+      <div id="fleet-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <!-- fleet cards injected by JS -->
+      </div>
+    </section>
+
+    <!-- ── Bot Detail ────────────────────────────────────────────── -->
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-bold uppercase tracking-widest text-gray-600">Bot Detail</span>
+      <span id="detail-bot-label" class="text-gray-500 text-xs">— default</span>
+    </div>
+
+    <!-- Row 1: Status + PnL ──────────────────────────────────────── -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 
       <!-- Bot Status -->
@@ -99,7 +138,7 @@
 
     </div>
 
-    <!-- ── Row 2: Trades ─────────────────────────────────────── -->
+    <!-- ── Recent Trades ─────────────────────────────────────────── -->
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
       <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600 mb-4">Recent Trades</h2>
       <div class="overflow-x-auto">
@@ -122,7 +161,7 @@
       </div>
     </div>
 
-    <!-- ── Row 3: Events ─────────────────────────────────────── -->
+    <!-- ── Runtime Events ────────────────────────────────────────── -->
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xs font-bold uppercase tracking-widest text-gray-600">Runtime Events</h2>
@@ -141,23 +180,24 @@
   </main>
 
   <footer class="text-center text-gray-800 text-xs pb-6">
-    Sentinel · read-only view · refreshes every 15 s
+    Sentinel · read-only · refreshes every 15 s
   </footer>
-
-  <style>
-    .filter-btn {
-      padding: 2px 8px; border-radius: 4px; font-size: 11px;
-      background: #1f2937; color: #6b7280; cursor: pointer;
-    }
-    .filter-btn:hover { background: #374151; color: #d1d5db; }
-    .active-btn { background: #374151 !important; color: #e5e7eb !important; }
-  </style>
 
   <script>
     const API = '/api';
-    let currentLevel = null;
+    let currentLevel  = null;
+    let currentBot    = null;  // null = server default
 
-    // ── helpers ──────────────────────────────────────────────
+    // ── URL builder ──────────────────────────────────────────────
+
+    function apiUrl(path, extraParams) {
+      const p = new URLSearchParams(extraParams || {});
+      if (currentBot) p.set('bot', currentBot);
+      const qs = p.toString();
+      return `${API}${path}${qs ? '?' + qs : ''}`;
+    }
+
+    // ── helpers ───────────────────────────────────────────────────
 
     function fmtUtc(iso) {
       if (!iso) return '—';
@@ -167,6 +207,15 @@
         return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} `
              + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
       } catch { return iso; }
+    }
+
+    function fmtHHMM(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+      } catch { return '—'; }
     }
 
     function pnlCls(v) {
@@ -181,36 +230,167 @@
       return (n >= 0 ? '+' : '') + n.toFixed(4);
     }
 
+    // Staleness: < 10 min = green, < 30 min = yellow, else = red/gray
+    function stalenessCls(iso) {
+      if (!iso) return 'text-gray-600';
+      const mins = (Date.now() - new Date(iso).getTime()) / 60000;
+      if (mins < 10)  return 'text-green-400';
+      if (mins < 30)  return 'text-yellow-400';
+      return 'text-red-400';
+    }
+
     function setLoading(on) {
       const el = document.getElementById('spinner');
       if (on) { el.classList.remove('hidden'); el.classList.add('spinning'); }
-      else { el.classList.add('hidden'); el.classList.remove('spinning'); }
+      else    { el.classList.add('hidden'); el.classList.remove('spinning'); }
     }
 
-    // ── fetchers ─────────────────────────────────────────────
-
-    async function fetchStatus() {
-      const r = await fetch(`${API}/status`);
-      const d = await r.json();
-
-      const isDry = d.dry_run_mode;
+    function setHeaderBadge(isDry) {
       const badge = document.getElementById('mode-badge');
       badge.textContent = isDry ? 'DRY RUN' : 'LIVE';
-      badge.className = `px-2 py-0.5 rounded text-xs font-bold tracking-wide `
+      badge.className = 'px-2 py-0.5 rounded text-xs font-bold tracking-wide '
         + (isDry ? 'bg-yellow-950 text-yellow-400 border border-yellow-800'
                  : 'bg-red-950 text-red-400 border border-red-800');
+    }
+
+    // ── fleet section ─────────────────────────────────────────────
+
+    function renderFleetCard(bot, server) {
+      const isDry     = server ? server.dry_run_mode !== false : true;
+      const strategy  = server?.strategy_mode || 'xgb';
+      const stCls     = stalenessCls(bot.last_candle_time);
+      const side      = bot.last_action_side;
+      const sideCls   = side === 'Buy' ? 'text-green-400' : side === 'Sell' ? 'text-red-400' : 'text-gray-600';
+      const pnlN      = parseFloat(bot.total_pnl || 0);
+      const pnlStr    = isNaN(pnlN) ? '—' : (pnlN >= 0 ? '+' : '') + pnlN.toFixed(4);
+      const pnlColor  = pnlCls(isNaN(pnlN) ? '0' : bot.total_pnl);
+      const isSel     = currentBot === bot.id;
+      const modeBadge = isDry
+        ? `<span class="px-1.5 py-0.5 rounded text-xs font-bold bg-yellow-950 text-yellow-400" style="border:1px solid #713f12">DRY</span>`
+        : `<span class="px-1.5 py-0.5 rounded text-xs font-bold bg-red-950 text-red-400" style="border:1px solid #7f1d1d">LIVE</span>`;
+
+      return `
+        <div onclick="selectBot('${bot.id}')"
+             class="fleet-card bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer${isSel ? ' selected' : ''}"
+             data-bot-id="${bot.id}">
+          <div class="flex items-start justify-between mb-3">
+            <span class="text-sm font-bold uppercase tracking-wide text-white">${bot.id}</span>
+            <div class="flex items-center gap-1.5">
+              ${modeBadge}
+              <span class="px-1.5 py-0.5 rounded text-xs bg-gray-800 text-gray-400">${strategy}</span>
+            </div>
+          </div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between items-center">
+              <span class="text-gray-500">Last seen</span>
+              <span class="font-mono ${stCls}">${fmtHHMM(bot.last_candle_time)}</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-500">Action</span>
+              <span class="font-bold ${sideCls}">${side || '—'}</span>
+            </div>
+            <div class="flex justify-between items-center pt-1.5 border-t border-gray-800">
+              <span class="text-gray-600">${bot.total_closed_trades || 0} trades</span>
+              <span class="font-bold font-mono ${pnlColor}">${pnlStr}</span>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function updateFleetSection(data) {
+      const server = data.server || null;
+      const bots   = data.bots  || [];
+      const section = document.getElementById('fleet-section');
+      const grid    = document.getElementById('fleet-grid');
+      const count   = document.getElementById('fleet-count');
+
+      if (bots.length < 2) {
+        section.classList.add('hidden');
+        return;
+      }
+
+      section.classList.remove('hidden');
+      count.textContent = `${bots.length} bots`;
+      grid.innerHTML = bots.map(b => renderFleetCard(b, server)).join('');
+    }
+
+    // ── bot selector ──────────────────────────────────────────────
+
+    function selectBot(val) {
+      currentBot = val || null;
+
+      // Sync dropdown
+      document.getElementById('bot-select').value = val || '';
+
+      // Update fleet card highlight
+      document.querySelectorAll('.fleet-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.botId === currentBot);
+      });
+
+      // Update detail label
+      const label = document.getElementById('detail-bot-label');
+      if (label) label.textContent = currentBot ? `— ${currentBot}` : '— default';
+
+      refreshData();
+    }
+
+    async function fetchBots() {
+      try {
+        const r   = await fetch(`${API}/bots`);
+        const raw = await r.json();
+
+        // Support both {server, bots:[...]} envelope and old flat-array
+        const data = Array.isArray(raw) ? { server: null, bots: raw } : raw;
+        const { server, bots = [] } = data;
+
+        // Update header badge from server metadata
+        if (server) setHeaderBadge(server.dry_run_mode !== false);
+
+        // Update dropdown
+        const sel  = document.getElementById('bot-select');
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">default</option>';
+        bots.forEach(b => {
+          const opt = document.createElement('option');
+          opt.value = b.id;
+          const dot = b.db_exists ? '●' : '○';
+          const ts  = b.last_candle_time ? ' · ' + fmtUtc(b.last_candle_time).slice(11, 16) : '';
+          opt.textContent = `${dot} ${b.id}${ts}`;
+          sel.appendChild(opt);
+        });
+        if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+
+        // Fleet cards
+        updateFleetSection(data);
+
+        // Detail label (initial set)
+        const label = document.getElementById('detail-bot-label');
+        if (label && !currentBot) {
+          label.textContent = bots.length === 1 ? `— ${bots[0].id}` : '— default';
+        }
+
+      } catch (_) { /* non-fatal */ }
+    }
+
+    // ── detail panel fetchers ─────────────────────────────────────
+
+    async function fetchStatus() {
+      const r = await fetch(apiUrl('/status'));
+      const d = await r.json();
+
+      setHeaderBadge(d.dry_run_mode);
 
       document.getElementById('db-dot').className = 'w-2 h-2 rounded-full '
         + (d.db_exists ? 'bg-green-500' : 'bg-gray-700');
 
-      document.getElementById('st-mode').textContent = isDry ? 'Dry Run (safe)' : '⚡ LIVE';
+      document.getElementById('st-mode').textContent = d.dry_run_mode ? 'Dry Run (safe)' : '⚡ LIVE';
       document.getElementById('st-mode').className = 'text-xs font-bold '
-        + (isDry ? 'text-yellow-400' : 'text-red-400');
+        + (d.dry_run_mode ? 'text-yellow-400' : 'text-red-400');
 
       document.getElementById('st-strategy').textContent = d.strategy_mode || '—';
-      document.getElementById('st-candle').textContent = fmtUtc(d.last_processed_candle_time);
+      document.getElementById('st-candle').textContent   = fmtUtc(d.last_processed_candle_time);
 
-      const side = d.last_action_side;
+      const side     = d.last_action_side;
       const actionEl = document.getElementById('st-action');
       if (side) {
         actionEl.textContent = side;
@@ -229,13 +409,13 @@
     }
 
     async function fetchPnL() {
-      const r = await fetch(`${API}/pnl`);
+      const r = await fetch(apiUrl('/pnl'));
       const d = await r.json();
 
-      const totalN = parseFloat(d.total_pnl);
+      const totalN  = parseFloat(d.total_pnl);
       const totalEl = document.getElementById('pnl-total');
       totalEl.textContent = (isNaN(totalN) ? '0.000000' : pnlFmt(d.total_pnl)) + ' USDT';
-      totalEl.className = 'text-3xl font-bold ' + pnlCls(d.total_pnl);
+      totalEl.className   = 'text-3xl font-bold ' + pnlCls(d.total_pnl);
 
       const hasData = d.total_closed_trades > 0;
       document.getElementById('pnl-winrate').textContent =
@@ -247,9 +427,9 @@
     }
 
     async function fetchTrades() {
-      const r = await fetch(`${API}/trades?limit=50`);
+      const r      = await fetch(apiUrl('/trades', { limit: 50 }));
       const trades = await r.json();
-      const tbody = document.getElementById('trades-tbody');
+      const tbody  = document.getElementById('trades-tbody');
 
       if (!trades.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-700">No trades recorded yet.</td></tr>';
@@ -275,10 +455,9 @@
     }
 
     async function fetchEvents(level) {
-      const url = level
-        ? `${API}/events?limit=60&level=${encodeURIComponent(level)}`
-        : `${API}/events?limit=60`;
-      const r = await fetch(url);
+      const params = { limit: 60 };
+      if (level) params.level = level;
+      const r      = await fetch(apiUrl('/events', params));
       const events = await r.json();
       const container = document.getElementById('events-list');
 
@@ -288,8 +467,10 @@
       }
 
       container.innerHTML = events.map(e => {
-        const lvl = (e.level || '').toUpperCase();
-        const badgeCls = lvl === 'ERROR' ? 'badge-error' : (lvl === 'WARNING' || lvl === 'WARN') ? 'badge-warn' : 'badge-info';
+        const lvl      = (e.level || '').toUpperCase();
+        const badgeCls = lvl === 'ERROR' ? 'badge-error'
+                       : (lvl === 'WARNING' || lvl === 'WARN') ? 'badge-warn'
+                       : 'badge-info';
         return `
           <div class="flex items-start gap-3 py-1 px-2 rounded hover:bg-gray-800/30 transition-colors">
             <span class="${badgeCls} px-1 py-0.5 rounded text-xs font-bold min-w-[34px] text-center">${lvl.slice(0,4)}</span>
@@ -300,29 +481,22 @@
       }).join('');
     }
 
-    // ── filter buttons ────────────────────────────────────────
+    // ── event filter buttons ──────────────────────────────────────
 
     function filterEvents(level) {
       currentLevel = level;
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active-btn'));
       const map = { null: 'btn-all', INFO: 'btn-info', WARNING: 'btn-warn', ERROR: 'btn-err' };
-      const key = level === null ? 'null' : level;
-      const btnId = map[key] || 'btn-all';
-      document.getElementById(btnId).classList.add('active-btn');
+      document.getElementById(map[level === null ? 'null' : level] || 'btn-all').classList.add('active-btn');
       fetchEvents(level);
     }
 
-    // ── main refresh loop ─────────────────────────────────────
+    // ── refresh loops ─────────────────────────────────────────────
 
-    async function refreshAll() {
+    async function refreshData() {
       setLoading(true);
       try {
-        await Promise.all([
-          fetchStatus(),
-          fetchPnL(),
-          fetchTrades(),
-          fetchEvents(currentLevel),
-        ]);
+        await Promise.all([fetchStatus(), fetchPnL(), fetchTrades(), fetchEvents(currentLevel)]);
         const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         document.getElementById('last-updated').textContent =
@@ -333,6 +507,10 @@
       } finally {
         setLoading(false);
       }
+    }
+
+    async function refreshAll() {
+      await Promise.all([fetchBots(), refreshData()]);
     }
 
     refreshAll();
