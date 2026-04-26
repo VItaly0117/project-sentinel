@@ -242,6 +242,49 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
   0.45/0.51/0.60, with and without keep_fixed_tp) captured in the final
   hand-off summary.
 
+## Backtest v2 + Bybit-native multi-year matrix (2026-04-26)
+- New module `sentinel_training/ingest/bybit_download.py` paginates the Bybit V5
+  public market kline endpoint (no API key) with rate limiting, raw JSON page
+  caching for audit, deduplication, and gap detection. Default behaviour is
+  resume-friendly: re-running re-uses cached pages.
+- Pulled BTCUSDT and ETHUSDT linear 5m datasets covering 2024-01-01 → 2026-04-25
+  (243,647 rows each, 0 gaps, 1 boundary-overlap dup dropped per symbol). Output
+  at `data/normalized/bybit/<SYMBOL>/5m/...csv` plus metadata sidecar with
+  category, download_command, downloader.* provenance. Datasets stay local
+  (`data/` in `.gitignore`); reproducible via documented commands.
+- New `scripts/backtest_v2.py` adds realistic execution costs on top of the v1
+  sandbox: half-spread + slippage on entry/exit, taker/maker/custom fees,
+  conservative same-candle policy (SL wins ties; v1 silently treated ties as
+  timeouts), gross vs net PnL split, JSON report + per-trade CSV + equity CSV,
+  and shared `sentinel_runtime/exits.py` for the ATR-trailing variant.
+- New `scripts/run_backtest_v2_matrix.py` runs 2 symbols × 3 exit variants ×
+  4 confidences × 3 cost profiles × 4 time slices = 288 configurations and
+  writes a `summary.csv` + `manifest.json` + verdict classifier
+  (`PASS_CANDIDATE` / `WEAK` / `FAIL` / `INSUFFICIENT`) per the demo-forward
+  gate.
+- Tests: `tests/test_backtest_v2.py` (cost math, same-candle policy, writers,
+  verdict classifier — 21 cases) and `tests/test_bybit_download.py` (plan
+  builder, ISO/millis, dedup, gap detection, CLI parser — 10 cases). All
+  31 new tests + the 95 prior backtest-v2 / ingest / runtime / exits tests
+  pass.
+- Matrix verdict (run id `20260426T144523Z`):
+  - PASS_CANDIDATE: 12 / 288 — **all** under `zero_cost`. None survive
+    `realistic_taker` (taker 0.055% + 2 bp spread + 2 bp slippage).
+  - At realistic costs: 96 / 96 FAIL across both symbols, all variants,
+    all confidences, all slices.
+  - ATR trailing did NOT improve risk under realistic costs vs fixed: it
+    increased turnover, fees, and drawdown on both symbols.
+- Operator interpretation: the current XGB model + fixed/ATR-trailing exits
+  do not show profitable evidence on Bybit-native 2024-2026 5m data once
+  Bybit demo execution friction is modelled. Demo-forward gate is **not
+  met**; runtime stays in `DRY_RUN_MODE`.
+- Documentation: `docs/backtest-v2.md` covers data commands, single-run +
+  matrix commands, cost-profile semantics, conservative same-candle
+  rationale, ATR-trailing role, summary.csv reading guide, and demo-forward
+  gate. Handoff tarball at `handoff/backtest_v2_<RUN_ID>.tar.gz` (8.7 MB)
+  carries summary.csv, manifest.json, reports_json, configs, and the two
+  normalized Bybit CSVs for offline review.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
