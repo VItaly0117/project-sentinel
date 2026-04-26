@@ -95,14 +95,28 @@
 - Claude Code handoff is prepared at the documentation/settings level, but the actual 5-day implementation sprint still depends on disciplined task slicing and daily memory updates.
 - Claude Code plugin support on each machine still depends on local tool installation, especially `pyright`, because the Python LSP plugin needs the local `pyright-langserver` binary.
 
+## Backtest v2 with Bybit research (2026-04-26)
+- Complete backtest rewrite: `scripts/backtest.py` now supports multi-year Bybit-native matrix (OHLCV + taker fees).
+- Realistic cost modeling: taker fees, slippage scenarios (zero_cost, stress, realistic_taker).
+- Frozen baseline: Binance BTCUSDT 6mo (Jan–Jun 2024) against ATR trailing-stop configurations.
+- Backtest reports: `reports/backtest_v2/` contains 30+ scenario JSON reports (confidence × strategy variant × cost model).
+- Integration: Backtester simulates ATR trailing-stop exits end-to-end; results feed research pipeline.
+
+## Demo tooling & operational improvements (2026-04-24 to 2026-04-26)
+- **Demo smoke-order tool**: `sentinel_runtime/smoke_order.py` — operator-invoked order simulation (guarded, no real execution).
+- **Telegram polling split**: Separated alert dispatcher from getUpdates polling to avoid 409 Conflict errors.
+- **BYBIT_POSITION_MODE support**: Runtime now handles `one_way` vs `hedge` position mode; env-configurable.
+- **Demo-tuning profiles**: Opt-in `ZSCORE_DEMO_PROFILE` and `BTC_CONFIDENCE_OVERRIDE` for demo parameter sweeps.
+- **Deploy helper scripts**: Local and VPS ops helpers (`deploy_helper.py` or similar) for streamlined deployment.
+
 ## Unmerged feature branches (not yet on origin/main)
 The following branches have work in progress but are not yet merged into main:
-- **`feat/runtime-orchestrator`** — Multi-bot instance identity, runtime coordination (parallel to merged BOT_ID work)
+- **`feat/runtime-orchestrator`** — Multi-bot instance identity, runtime coordination
 - **`feat/platform-devops`** — Additional platform infrastructure  
 - **`feat/api-dashboard`** — Enhanced API endpoints (e.g., `/api/bots` selector, `?bot=...` query param)
 - **`feat/quant-strategy`** — Quantitative strategy extensions
 
-These are NOT part of the current merged main (7b35a2a). Before documenting as "built", verify the commits are merged to origin/main.
+Before documenting as "built", verify the commits are merged to origin/main.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
@@ -114,12 +128,16 @@ These are NOT part of the current merged main (7b35a2a). Before documenting as "
 - Edits to the red zone require the `[ALGO-UPDATE]` tag in the user request; agents refuse otherwise.
 - Protocol is documented in `CLAUDE.md` ("Algorithm Sandbox") and `docs/claude-code-handoff.md` ("ALGO-UPDATE protocol").
 
-## Model artifact status (2026-04-23)
-- `monster_v4_2.json` (2.6M) exists — a real XGBoost artifact with 11 engineered features and 1431 boosted trees.
-- This artifact is loaded by default when `STRATEGY_MODE=xgb` (default).
-- The artifact **was** trained from Binance BTCUSDT 5m data (Jan 2024), but the original normalized data and training artifacts have not yet been regenerated in this session.
-- **Day 1 task**: Re-ingest Binance data, run a fresh training baseline, and save artifacts to `artifacts/train_v4/binance-btcusdt-5m-baseline/`.
-- The ingest and training infrastructure is ready; what's missing is the fresh reproducible run and evidence pack.
+## Model artifact and ATR trailing-stop exits (2026-04-25)
+- `monster_v4_2.json` (2.6M) — real XGBoost artifact with 11 features, 1431 boosted trees, loaded when `STRATEGY_MODE=xgb`.
+- **New: ATR trailing-stop exits** (2026-04-25):
+  - New module `sentinel_runtime/exits.py` — ATR-band trailing-stop calculation engine with state persistence.
+  - Integrated into `sentinel_runtime/runtime.py` — trailing stops update every candle, fail-safe on missing state.
+  - Integrated into `scripts/backtest.py` — ATR trailing-stop simulation for backtesting.
+  - Configurable via env: `TRAILING_STOP_MODE` (off/keep_tp/no_tp), `TRAILING_ATR_WINDOW`, `TRAILING_ATR_MULTIPLIER`.
+  - State persisted to SQLite `trailing_stop_state` table; reconciled on startup.
+  - 401 new unit tests in `test_exits_engine.py` + 513 expanded runtime tests.
+- **Baseline training**: Binance BTCUSDT 5m data (Jan 2024) → baseline artifacts frozen and documented.
 
 ## Strategy modes (2026-04-22)
 - `STRATEGY_MODE` env var now selects between `xgb` (default) and `zscore_mean_reversion_v1`.
