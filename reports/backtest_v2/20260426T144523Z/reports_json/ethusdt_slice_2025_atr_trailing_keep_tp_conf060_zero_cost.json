@@ -1,0 +1,202 @@
+{
+  "breakdowns": {
+    "by_month": {
+      "2025-01": {
+        "net_pnl": -0.0383445199999987,
+        "trades": 171,
+        "win_rate": 61.98830409356725,
+        "wins": 106
+      },
+      "2025-02": {
+        "net_pnl": -0.25053980999999875,
+        "trades": 242,
+        "win_rate": 57.02479338842975,
+        "wins": 138
+      },
+      "2025-03": {
+        "net_pnl": -0.10052116499999827,
+        "trades": 222,
+        "win_rate": 58.55855855855856,
+        "wins": 130
+      },
+      "2025-04": {
+        "net_pnl": 0.004227684999997953,
+        "trades": 210,
+        "win_rate": 59.04761904761905,
+        "wins": 124
+      },
+      "2025-05": {
+        "net_pnl": 0.7124873049999978,
+        "trades": 180,
+        "win_rate": 72.22222222222221,
+        "wins": 130
+      },
+      "2025-06": {
+        "net_pnl": 0.01624122500000014,
+        "trades": 153,
+        "win_rate": 62.091503267973856,
+        "wins": 95
+      },
+      "2025-07": {
+        "net_pnl": 0.1287554049999989,
+        "trades": 139,
+        "win_rate": 63.30935251798561,
+        "wins": 88
+      },
+      "2025-08": {
+        "net_pnl": -0.3092268849999928,
+        "trades": 149,
+        "win_rate": 54.36241610738255,
+        "wins": 81
+      },
+      "2025-09": {
+        "net_pnl": 0.026739594999997757,
+        "trades": 67,
+        "win_rate": 58.2089552238806,
+        "wins": 39
+      },
+      "2025-10": {
+        "net_pnl": 0.2986147749999976,
+        "trades": 165,
+        "win_rate": 62.42424242424243,
+        "wins": 103
+      },
+      "2025-11": {
+        "net_pnl": -0.14872143499999674,
+        "trades": 261,
+        "win_rate": 58.620689655172406,
+        "wins": 153
+      },
+      "2025-12": {
+        "net_pnl": -0.240817619999998,
+        "trades": 147,
+        "win_rate": 59.183673469387756,
+        "wins": 87
+      }
+    },
+    "by_outcome": {
+      "sl": {
+        "net_pnl": -14.162185800000001,
+        "trades": 814
+      },
+      "timeout": {
+        "net_pnl": -0.06496999999999843,
+        "trades": 28
+      },
+      "tp": {
+        "net_pnl": 5.400876360000005,
+        "trades": 161
+      },
+      "trailing": {
+        "net_pnl": 8.925173995000002,
+        "trades": 1103
+      }
+    },
+    "by_side": {
+      "long": {
+        "net_pnl": 0.24822089999999777,
+        "trades": 1671,
+        "win_rate": 60.921603830041896
+      },
+      "short": {
+        "net_pnl": -0.14932634499999087,
+        "trades": 435,
+        "win_rate": 58.85057471264368
+      }
+    },
+    "by_year": {
+      "2025": {
+        "net_pnl": 0.0988945550000073,
+        "trades": 2106,
+        "win_rate": 60.49382716049383,
+        "wins": 1274
+      }
+    }
+  },
+  "config": {
+    "confidence": 0.6,
+    "custom_fee_pct": 0.00055,
+    "data_path": "data/normalized/bybit/ETHUSDT/5m/bybit_ETHUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "date_end": "2026-01-01T00:00:00Z",
+    "date_start": "2025-01-01T00:00:00Z",
+    "exit_mode": "atr_trailing",
+    "fee_mode": "taker",
+    "funding_mode": "none",
+    "initial_balance": 1000.0,
+    "interval_minutes": 5,
+    "look_ahead": 36,
+    "maker_fee_pct": 0.0002,
+    "model_path": "monster_v4_2.json",
+    "order_qty": 0.001,
+    "same_candle_policy": "conservative",
+    "sl_pct": 0.006,
+    "slippage_bps": 0.0,
+    "source": "bybit",
+    "spread_bps": 0.0,
+    "symbol": "ETHUSDT",
+    "taker_fee_pct": 0.0,
+    "tp_pct": 0.012,
+    "trailing": {
+      "activation_pct": 0.004,
+      "atr_mult": 1.4,
+      "atr_period": 14,
+      "keep_fixed_tp": true,
+      "min_lock_pct": 0.0015
+    }
+  },
+  "data_quality": {
+    "duplicate_timestamps_count": 0,
+    "expected_5m_rows": 105120,
+    "gaps_first_5": [],
+    "missing_candles_count": 0,
+    "row_count": 105120,
+    "timestamp_max_utc": "2025-12-31T23:55:00+00:00",
+    "timestamp_min_utc": "2025-01-01T00:00:00+00:00"
+  },
+  "generated_at_utc": "2026-04-26T14:52:11.444961+00:00",
+  "outcomes": {
+    "skipped_no_atr": 0,
+    "sl": 814,
+    "timeout": 28,
+    "tp": 161,
+    "trailing": 1103,
+    "trailing_activated": 1207
+  },
+  "signals": {
+    "long_signals_above_threshold": 6345,
+    "no_signal_rows": 96715,
+    "short_signals_above_threshold": 1773,
+    "total_signal_rows": 104833
+  },
+  "summary": {
+    "avg_duration_candles": 6.024216524216524,
+    "avg_duration_minutes": 30.12108262108262,
+    "avg_loss_net": -0.017174442067307692,
+    "avg_trade_net": 4.6958478157648194e-05,
+    "avg_win_net": 0.011293587405808483,
+    "best_trade_net": 0.07191600000000017,
+    "expectancy_net": 4.6958478157648194e-05,
+    "fees_paid": 0.0,
+    "final_balance": 1000.098894555,
+    "funding_paid": 0.0,
+    "long_net_pnl": 0.24822089999999777,
+    "long_trades": 1671,
+    "longest_losing_streak": 7,
+    "max_drawdown_pct": 0.0621198769433767,
+    "max_drawdown_usdt": 0.6215919149999536,
+    "profit_factor_net": 1.0069209612382581,
+    "short_net_pnl": -0.14932634499999087,
+    "short_trades": 435,
+    "sl_count": 814,
+    "spread_slippage_cost_estimate": 0.0,
+    "timeout_count": 28,
+    "total_gross_pnl": 0.0988945550000071,
+    "total_net_pnl": 0.0988945550000071,
+    "tp_count": 161,
+    "trades_total": 2106,
+    "trailing_count": 1103,
+    "turnover_notional": 6071.05318,
+    "win_rate_net": 60.49382716049383,
+    "worst_trade_net": -0.02929302000000007
+  }
+}

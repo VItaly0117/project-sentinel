@@ -8,45 +8,82 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
 - A stabilization-first codebase: safety, tests, persistence, reproducibility, and operator clarity come before platform expansion.
 
 ## Current status
-- Runtime:
-  - typed env config
-  - risk limits
-  - SQLite persistence
-  - startup reconciliation
-  - dry-run mode
-  - focused pytest coverage
-- Training:
+- **Runtime:**
+  - typed env config + dual storage (SQLite local / PostgreSQL)
+  - risk limits + startup reconciliation + dry-run mode
+  - deterministic trading logic (XGBoost or zscore rule-based)
+  - preflight-gated launch with safety checks
+  - focused pytest coverage (30 tests passing)
+- **Training:**
   - modular dataset/split/train/evaluate flow
-  - validation-only early stopping
-  - deterministic seed handling
-  - artifact metadata and checksums
-  - focused pytest coverage
-- Not built yet:
-  - admin panel
-  - cloud orchestration
-  - shared infra like PostgreSQL/Redis
-  - full multi-bot target platform from the tech spec
+  - deterministic artifact generation with metadata + checksums
+  - focused pytest coverage (17 tests passing)
+- **Data ingest:**
+  - Binance/Bybit CSV/JSON normalization
+  - deterministic metadata sidecars
+  - 17 ingest tests passing
+- **Deployment:**
+  - Docker + docker-compose with PostgreSQL + multi-bot support (hardened)
+  - Non-root user, per-service healthchecks, log rotation (10m × 5 files)
+  - Preflight-gated container startup (config errors fail loudly)
+  - Read-only FastAPI layer (`/api/health`, `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`)
+  - Single-file HTML dashboard (Tailwind, vanilla JS, 15 s refresh)
+  - Per-bot schema isolation (btcusdt/ethusdt schemas in shared PG)
+  - Step-by-step VPS deployment guide with smoke-test checklist
+- **Pending in feature branches (not yet merged to main):**
+  - GitHub Actions smoke CI
+  - Remote credential verification via --remote-check flag
+  - Multi-bot API selector (/api/bots endpoint, ?bot=... query param)
+- **Not built yet (deferred post-MVP):**
+  - Live-mode admin panel (write-enabled; API is read-only for MVP)
+  - Multi-host orchestration (Kubernetes / auto-scaling)
+  - Redis caching layer
+  - Advanced backtesting and slippage modeling
+  - Full multi-bot platform architecture from the tech spec
 
 ## Repository structure
 ```text
 .
+├── .dockerignore
 ├── .env.example
+├── Dockerfile
 ├── README.md
+├── docker-compose.yml
+├── requirements.txt
+├── requirements-api.txt
+├── sentineltest.py
+├── train_v4.py
 ├── ai/
 │   ├── current-state.md
 │   ├── progress.md
 │   ├── project-brief.md
-│   ├── rules.md
-│   ├── architecture-map.md
-│   ├── module-briefs/
 │   └── session-notes/
-├── artifacts/
+├── api/
+│   ├── main.py
+│   └── db.py
+├── dashboard/
+│   └── index.html
 ├── docs/
+│   ├── hackathon-operator-checklist.md
+│   ├── vps-deployment.md
+│   ├── training-data-sources.md
+│   └── ...
+├── docker/
+│   └── entrypoint.sh
 ├── sentinel_runtime/
+│   ├── runtime.py
+│   ├── storage.py (SQLite + PostgreSQL)
+│   ├── config.py
+│   └── ...
 ├── sentinel_training/
-├── tests/
-├── sentineltest.py
-└── train_v4.py
+│   ├── pipeline.py
+│   ├── ingest/
+│   └── ...
+└── tests/
+    ├── test_runtime_mvp.py
+    ├── test_training_pipeline.py
+    ├── test_training_ingest.py
+    └── test_zscore_strategy.py
 ```
 
 ## Core modules
@@ -118,6 +155,352 @@ Private MVP repository for a safer trading-runtime and time-series training pipe
   - Rule thresholds are deterministic but **not** a profit guarantee.
   - Demo/testnet fills differ from real-money execution because of slippage, spread, latency, partial fills, and exchange-state differences.
   - Keep `DRY_RUN_MODE=true` until a real backtest on the target interval and symbol matches the operator's risk budget.
+
+### XGBoost confidence override (opt-in)
+
+The XGB path keeps its spec-default `SIGNAL_CONFIDENCE=0.51`. For demo conditions where the model's Buy/Sell class probabilities rarely cross that gate, an opt-in override can lower the threshold without silently changing the global default.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `SIGNAL_CONFIDENCE` | `0.51` | Spec threshold. Unchanged. |
+| `SIGNAL_CONFIDENCE_OVERRIDE` | _(unset)_ | When set (0.0–1.0), takes precedence over `SIGNAL_CONFIDENCE`. Empty string = unset. |
+
+In the shipped `docker-compose.yml`, `btc-bot` sets `SIGNAL_CONFIDENCE_OVERRIDE=${BTC_SIGNAL_CONFIDENCE:-0.30}`. To adjust or disable:
+
+```bash
+# Tune btc-bot threshold
+BTC_SIGNAL_CONFIDENCE=0.25 docker compose up -d btc-bot
+
+# Disable override, restore spec default
+BTC_SIGNAL_CONFIDENCE= docker compose up -d btc-bot
+```
+
+Runtime bootstrap logs the active threshold and its source:
+```
+Runtime bootstrapped. … confidence=0.300 (source=override) baseline_balance=1000
+```
+
+Risk manager, reconciliation, TP/SL, dry-run gating, notifications, and the model itself remain untouched — only the one threshold value moves.
+
+### Zscore tuning profiles (opt-in)
+
+The zscore engine keeps **spec-accurate defaults**; nothing changes unless you opt in.
+
+| Env var | Values | Effect |
+|---|---|---|
+| `ZSCORE_PROFILE` | `default` (implicit), `demo_relaxed` | Picks a named preset as the base for all gates. |
+| `ZSCORE_ENTRY_LONG` | float (e.g. `-1.8`) | Overrides the long z-score threshold. |
+| `ZSCORE_ENTRY_SHORT` | float (e.g. `1.8`) | Overrides the short z-score threshold. |
+| `ZSCORE_RSI_LONG_MAX` | float (e.g. `40`) | Overrides the max-RSI gate for long entries. |
+| `ZSCORE_RSI_SHORT_MIN` | float (e.g. `60`) | Overrides the min-RSI gate for short entries. |
+| `ZSCORE_ATR_PCT_MIN` | float (e.g. `0.0010`) | Overrides the lower ATR/close band. |
+| `ZSCORE_ATR_PCT_MAX` | float (e.g. `0.0250`) | Overrides the upper ATR/close band. |
+| `ZSCORE_VOLUME_MIN` | float (e.g. `-1.0`) | Overrides the minimum volume z-score. |
+
+**`demo_relaxed` preset** (for controlled demo runs when the spec defaults rarely fire in a short window):
+
+| Gate | default | demo_relaxed |
+|---|---|---|
+| `zscore_entry_long` | -2.1 | **-1.8** |
+| `zscore_entry_short` | 2.1 | **1.8** |
+| `rsi_long_max` | 32 | **40** |
+| `rsi_short_min` | 68 | **60** |
+| `atr_pct_min` | 0.0025 | **0.0010** |
+| `atr_pct_max` | 0.0180 | **0.0250** |
+| `volume_zscore_min` | -0.5 | **-1.0** |
+
+TP/SL, risk limits, dry-run gating, reconciliation, and notifications are unaffected by the profile — only the *entry* gates move.
+
+In the shipped `docker-compose.yml`, `btc-bot` is the **control path** on XGB and `eth-bot` runs the zscore engine with `ZSCORE_PROFILE=demo_relaxed`. Override with `BTC_STRATEGY_MODE`, `ETH_STRATEGY_MODE`, `ZSCORE_PROFILE`, or any individual `ZSCORE_*` env var in `.env`.
+
+### Telegram notifier
+
+Outbound alerts (trade opened / closed, runtime errors, blocked) use `sendMessage` and are safe on every bot. Inbound `/status` and `/help` commands use `getUpdates` long-poll — and Telegram only allows **one** active `getUpdates` consumer per bot token. Two containers sharing the same token both polling triggers HTTP `409 Conflict`.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | _(unset)_ | Bot token. No alerts or polling without it. |
+| `TELEGRAM_CHAT_ID` | _(unset)_ | Chat id for outbound alerts. |
+| `TELEGRAM_COMMAND_POLLING_ENABLED` | `true` | If `false`, the instance skips `getUpdates` but still sends alerts. |
+
+In the shipped compose, `btc-bot` polls commands (`TELEGRAM_COMMAND_POLLING_ENABLED=true`) and `eth-bot` does not (`false`). Both still send alerts. Override via `.env`:
+
+```bash
+# Swap which bot owns /status and /help
+BTC_TELEGRAM_COMMAND_POLLING=false ETH_TELEGRAM_COMMAND_POLLING=true docker compose up -d
+```
+
+## Exit modes (fixed / ATR trailing)
+
+The runtime and the backtester share the same exit engine
+(`sentinel_runtime/exits.py`). Exit behaviour is selected with
+`EXIT_MODE`:
+
+| Mode            | Description                                                                                |
+|-----------------|--------------------------------------------------------------------------------------------|
+| `fixed` (default) | Entry order carries both take-profit and stop-loss at `TP_PCT`/`SL_PCT`. Legacy behaviour. |
+| `atr_trailing`  | Initial hard stop stays. Optional fixed TP. Bot-managed ATR trailing stop that activates once the trade is in profit by `TRAILING_ACTIVATION_PCT`. |
+
+**Default behaviour is unchanged.** When `EXIT_MODE` is unset or set to
+`fixed`, every code path — order kwargs, dry-run simulation, preflight,
+reconciliation, Bybit `positionIdx` — behaves exactly as before.
+
+### Environment variables (ATR trailing)
+
+```bash
+# Turn trailing on (default: fixed)
+EXIT_MODE=atr_trailing
+
+# Profit threshold (fraction) before trailing activates. Hard SL stays active in the meantime.
+TRAILING_ACTIVATION_PCT=0.004   # 0.4%
+
+# ATR distance between best price and trailing stop.
+TRAILING_ATR_MULT=1.4
+
+# ATR lookback (closed candles).
+TRAILING_ATR_PERIOD=14
+
+# Floor (fraction of entry) applied to the trailing stop once activated.
+TRAILING_MIN_LOCK_PCT=0.0015    # 0.15%
+
+# Attach the fixed take-profit (TP_PCT) to the entry order even in trailing mode.
+TRAILING_KEEP_FIXED_TP=false
+```
+
+All values are validated at preflight — unknown `EXIT_MODE`, negative
+percentages, `atr_period < 2`, or `atr_mult <= 0` fail fast.
+
+### Backtest examples
+
+Fixed (baseline, current default):
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --confidence 0.51
+```
+
+ATR trailing, no fixed TP:
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --confidence 0.51 \
+  --exit-mode atr_trailing \
+  --sl-pct 0.006 \
+  --trailing-activation-pct 0.004 \
+  --trailing-atr-mult 1.4 \
+  --trailing-atr-period 14 \
+  --trailing-min-lock-pct 0.0015
+```
+
+ATR trailing, keep fixed TP as a ceiling:
+
+```bash
+python3 scripts/backtest.py \
+  --data-path data/normalized/binance/BTCUSDT/5m/binance_BTCUSDT_5m_20240101_20240630.csv \
+  --model-path monster_v4_2.json \
+  --exit-mode atr_trailing \
+  --trailing-keep-fixed-tp
+```
+
+The backtest report labels every trade's outcome as `tp`, `sl`,
+`trailing`, or `timeout`, and prints activation and "skipped (no ATR
+history)" counters.
+
+### Dry-run runtime example
+
+```bash
+# .env additions (do not commit real credentials)
+EXIT_MODE=atr_trailing
+TRAILING_ACTIVATION_PCT=0.004
+TRAILING_ATR_MULT=1.4
+TRAILING_ATR_PERIOD=14
+TRAILING_MIN_LOCK_PCT=0.0015
+TRAILING_KEEP_FIXED_TP=false
+DRY_RUN_MODE=true
+EXCHANGE_ENV=demo
+ALLOW_LIVE_MODE=false
+
+python3 sentineltest.py --preflight
+python3 sentineltest.py
+```
+
+In dry-run, a trailing exit is recorded as a synthetic closed trade and
+a Telegram notification is sent; the Bybit REST API is not called. In
+demo/live mode, the runtime issues a reduce-only market close via
+`close_position_market` — hedge/one-way `positionIdx` handling is
+unchanged.
+
+### Safety notes
+
+- ATR trailing is a **risk/exit feature**, not a guaranteed-profit
+  feature. The backtest matrix shows it can shift the win-rate /
+  profit-factor balance in either direction depending on confidence and
+  volatility regime.
+- Bot-managed trailing **depends on bot uptime**. If the runtime is
+  offline, the trailing stop cannot move. The initial hard SL attached
+  to the Bybit entry order remains active as a disaster-recovery stop.
+- The conservative same-candle rule used in backtest prefers adverse
+  outcomes (hard SL hitting first) unless trailing was already active
+  **before** that candle. Real-tick execution may differ.
+
+## Demo smoke order (one-off)
+
+One-off operator tool to prove the Bybit **demo** order path end-to-end, independent of strategy signals. Not invoked during normal bot operation.
+
+**Hard safety guards** — the tool refuses to run unless all are true:
+
+| Guard | Required value |
+|---|---|
+| `--demo-smoke-order` | passed |
+| `--confirm-demo-order` | passed |
+| `EXCHANGE_ENV` | `demo` |
+| `ALLOW_LIVE_MODE` | `false` |
+| `DRY_RUN_MODE` | `false` (so the order actually hits the exchange) |
+| `qty` | `0 < qty <= SMOKE_MAX_QTY` (default `0.01`) |
+
+**Smallest invocation** (defaults: `--side Buy`, qty from `ORDER_QTY`, auto-close after 3 s):
+
+```bash
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order
+```
+
+**Other options:**
+
+```bash
+# Pick side and qty explicitly
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --side Sell --qty 0.001
+
+# Open, don't close (operator inspects/closes manually)
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --no-close
+
+# Close whatever position is open on the configured symbol
+python3 sentineltest.py --demo-smoke-order --confirm-demo-order --close-only
+
+# Raise the max qty if you really mean it
+SMOKE_MAX_QTY=0.05 python3 sentineltest.py --demo-smoke-order --confirm-demo-order --qty 0.02
+```
+
+**Exit codes:**
+
+| Exit | Meaning |
+|---|---|
+| `0` | Demo order opened and closed cleanly. Demo path works. |
+| `1` | Config error (bad `.env` / missing creds). |
+| `2` | Guard refused (one of the conditions above failed). |
+| `3` | Exchange rejected the order (see error message). |
+| `4` | Unexpected internal error. |
+| `5` | Order flow completed but verification (position count / balance) did not match expectations. |
+
+**What a successful run looks like** (final log lines):
+
+```
+DEMO SMOKE ORDER RESULT
+  opened=True  open_order_id=...
+  closed=True  close_order_id=...
+  side=Buy qty=0.001
+  balance_before=... balance_after=...
+  positions_before=0 positions_after=0
+SMOKE ORDER: PASS — demo order path is working.
+```
+
+**What a failed run looks like**: exit 3 with the exact Bybit error, e.g.
+
+```
+Exchange rejected the smoke order: place_order failed after 3 attempts:
+position idx not match position mode (ErrCode: 10001)
+```
+
+That error specifically means the Bybit account's position mode does not match what the code sends. Use `BYBIT_POSITION_MODE` (see below) to align them without changing the account.
+
+### Bybit position mode
+
+Bybit linear perpetuals run in either **One-Way mode** (single slot per symbol, `positionIdx=0`) or **Hedge mode** (separate long/short slots, `positionIdx=1` for Buy/long and `positionIdx=2` for Sell/short). The adapter must match the account setting on every order, including reduce-only closes — otherwise Bybit returns `ErrCode 10001 position idx not match position mode`.
+
+| Env var | Default | Values | Effect |
+|---|---|---|---|
+| `BYBIT_POSITION_MODE` | `hedge` | `one_way` \| `hedge` | Sets `positionIdx` on every order placed by the runtime and the smoke-order tool. |
+
+Pick whichever matches your Bybit account UI setting. If the account is in One-Way mode, set `BYBIT_POSITION_MODE=one_way` in `.env`; the runtime will emit `positionIdx=0` on both `place_market_order` and the smoke-order close path. No other code changes required.
+
+## Deploy helpers
+
+One-command operator scripts for local and VPS bring-up:
+
+| Script | What it does |
+|--------|-------------|
+| `scripts/deploy_local.sh` | Bring up the full stack locally (Arch / any Linux + Docker) |
+| `scripts/deploy_vps.sh` | `git pull` + bring up / update on a VPS |
+| `scripts/smoke_check.sh` | 7-check automated post-deploy health test |
+| `scripts/logs_follow.sh [service]` | Tail service logs |
+| `scripts/stop_stack.sh` | Stop the stack safely (keeps data by default) |
+| `scripts/backup_db.sh` | Dump PostgreSQL state to a timestamped file |
+
+Full reference: `docs/deploy-helpers.md`
+
+## Docker / multi-bot local stack
+
+For full VPS deployment steps, smoke-test commands, and a rollback
+checklist, see `docs/vps-deployment.md`.
+
+### Prerequisites
+
+1. Copy `.env.example` to `.env` and fill in your Bybit demo API key and secret.
+2. Both bot services default to `DRY_RUN_MODE=true` — safe to start immediately.
+3. Drop `monster_v4_2.json` at the repo root (it is gitignored).
+
+### Launch the full stack
+
+```bash
+docker compose up --build
+```
+
+This starts four containers:
+| Service | Description |
+|---------|-------------|
+| `postgres` | PostgreSQL 16 (healthchecked, log-rotated) |
+| `btc-bot` | Sentinel runtime for `BTCUSDT`, schema `btcusdt`, preflight-gated |
+| `eth-bot` | Sentinel runtime for `ETHUSDT`, schema `ethusdt`, preflight-gated |
+| `api` | Read-only FastAPI dashboard on `127.0.0.1:8000` |
+
+### Start only PostgreSQL (manual inspection)
+
+```bash
+docker compose up postgres
+```
+
+### Inspect PostgreSQL runtime state
+
+```bash
+# Connect to the btc-bot schema
+psql postgresql://sentinel:sentinel_dev@localhost:5432/sentinel \
+  -c "SET search_path TO btcusdt; SELECT key, value_text, updated_at FROM runtime_state ORDER BY key;"
+
+# Connect to the eth-bot schema
+psql postgresql://sentinel:sentinel_dev@localhost:5432/sentinel \
+  -c "SET search_path TO ethusdt; SELECT key, value_text, updated_at FROM runtime_state ORDER BY key;"
+```
+
+### PostgreSQL environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | _(unset)_ | Full PostgreSQL DSN. If set, PostgreSQL is used instead of SQLite. |
+| `DATABASE_SCHEMA` | `public` | PostgreSQL schema for this bot instance. Use a distinct name per bot to avoid `runtime_state` key collisions. |
+
+### Backward compatibility
+
+- When `DATABASE_URL` is **not** set, the runtime uses SQLite exactly as before.
+- `RUNTIME_DB_PATH` is still read by preflight; when `DATABASE_URL` is set the SQLite path is reported but not used for persistent storage.
+
+### Tear down
+
+```bash
+docker compose down -v   # -v removes the postgres_data volume
+```
 
 ## Tests
 - Runtime:

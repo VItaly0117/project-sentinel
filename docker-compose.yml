@@ -1,0 +1,146 @@
+# ---------------------------------------------------------------------------
+# Project Sentinel — local multi-bot demo stack
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in Bybit demo credentials.
+#   2. Both bot services default to DRY_RUN_MODE=true — safe for smoke runs.
+#   3. Each bot gets its own PostgreSQL schema (btcusdt / ethusdt) so that
+#      runtime_state rows don't collide inside the shared database.
+#
+# Launch:
+#   docker compose up --build
+#
+# Stack overview:
+#   postgres — PostgreSQL 16, healthchecked, log-rotated
+#   btc-bot  — trading runtime for BTCUSDT, schema `btcusdt`, preflight-gated
+#   eth-bot  — trading runtime for ETHUSDT, schema `ethusdt`, preflight-gated
+#   api      — read-only FastAPI dashboard on http://localhost:8000
+# ---------------------------------------------------------------------------
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-bot-env: &bot-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:-sentinel_dev}@postgres:5432/${POSTGRES_DB:-sentinel}
+  MODEL_PATH: /app/monster_v4_2.json
+  DRY_RUN_MODE: "${DRY_RUN_MODE:-true}"
+  EXCHANGE_ENV: "${EXCHANGE_ENV:-demo}"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel} -d ${POSTGRES_DB:-sentinel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    <<: *default-logging
+
+  # Control path: BTC stays on the XGBoost model. For demo conditions the
+  # spec-default SIGNAL_CONFIDENCE=0.51 rarely fires (class probabilities in
+  # a short window typically peak ~0.15), so btc-bot ships with an opt-in
+  # SIGNAL_CONFIDENCE_OVERRIDE defaulting to 0.30. The global SIGNAL_CONFIDENCE
+  # default is unchanged; set BTC_SIGNAL_CONFIDENCE= (empty) to disable the
+  # override, or to any value to tune it.
+  btc-bot:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+      DATABASE_SCHEMA: btcusdt
+      BYBIT_SYMBOL: BTCUSDT
+      BOT_ID: btcusdt
+      STRATEGY_MODE: ${BTC_STRATEGY_MODE:-xgb}
+      SIGNAL_CONFIDENCE_OVERRIDE: ${BTC_SIGNAL_CONFIDENCE:-0.30}
+      # Only btc-bot polls Telegram getUpdates. eth-bot sends alerts but skips
+      # polling so the two containers don't race for the same token (409 Conflict).
+      TELEGRAM_COMMAND_POLLING_ENABLED: ${BTC_TELEGRAM_COMMAND_POLLING:-true}
+      RUNTIME_DB_PATH: /tmp/btc_runtime.db
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 sentineltest.py --preflight >/dev/null 2>&1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    <<: *default-logging
+
+  # Demo-tuned path: ETH runs the deterministic zscore engine on the opt-in
+  # `demo_relaxed` profile so entries are more likely during a short demo
+  # window. TP/SL, risk limits, reconciliation, and dry-run gating are
+  # unchanged. Override via BTC_STRATEGY_MODE / ETH_STRATEGY_MODE / ZSCORE_*
+  # env vars if you need finer control.
+  eth-bot:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+      DATABASE_SCHEMA: ethusdt
+      BYBIT_SYMBOL: ETHUSDT
+      BOT_ID: ethusdt
+      STRATEGY_MODE: ${ETH_STRATEGY_MODE:-zscore_mean_reversion_v1}
+      ZSCORE_PROFILE: ${ZSCORE_PROFILE:-demo_relaxed}
+      # eth-bot keeps outbound alerts enabled but does NOT poll getUpdates —
+      # two bots sharing one token polling concurrently trigger HTTP 409 Conflict.
+      TELEGRAM_COMMAND_POLLING_ENABLED: ${ETH_TELEGRAM_COMMAND_POLLING:-false}
+      RUNTIME_DB_PATH: /tmp/eth_runtime.db
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 sentineltest.py --preflight >/dev/null 2>&1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    <<: *default-logging
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["api"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:-sentinel_dev}@postgres:5432/${POSTGRES_DB:-sentinel}
+      # Which schema the dashboard reads from. Point at whichever bot to inspect.
+      DATABASE_SCHEMA: ${API_DATABASE_SCHEMA:-btcusdt}
+      BOT_ID: ${API_BOT_ID:-btcusdt}
+      STRATEGY_MODE: ${STRATEGY_MODE:-xgb}
+      DRY_RUN_MODE: "${DRY_RUN_MODE:-true}"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    <<: *default-logging
+
+volumes:
+  postgres_data:

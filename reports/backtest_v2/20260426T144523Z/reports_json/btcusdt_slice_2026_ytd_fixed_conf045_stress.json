@@ -1,0 +1,148 @@
+{
+  "breakdowns": {
+    "by_month": {
+      "2026-01": {
+        "net_pnl": -33.7554710893712,
+        "trades": 149,
+        "win_rate": 28.859060402684566,
+        "wins": 43
+      },
+      "2026-02": {
+        "net_pnl": -69.63109830584294,
+        "trades": 340,
+        "win_rate": 27.941176470588236,
+        "wins": 95
+      },
+      "2026-03": {
+        "net_pnl": -43.0162942998389,
+        "trades": 260,
+        "win_rate": 32.30769230769231,
+        "wins": 84
+      },
+      "2026-04": {
+        "net_pnl": -26.021938068353958,
+        "trades": 134,
+        "win_rate": 26.865671641791046,
+        "wins": 36
+      }
+    },
+    "by_outcome": {
+      "sl": {
+        "net_pnl": -295.0243101225027,
+        "trades": 517
+      },
+      "timeout": {
+        "net_pnl": -0.964345439744025,
+        "trades": 198
+      },
+      "tp": {
+        "net_pnl": 123.56385379883979,
+        "trades": 168
+      },
+      "trailing": {
+        "net_pnl": 0.0,
+        "trades": 0
+      }
+    },
+    "by_side": {
+      "long": {
+        "net_pnl": -102.52253058432653,
+        "trades": 515,
+        "win_rate": 29.126213592233007
+      },
+      "short": {
+        "net_pnl": -69.90227117908042,
+        "trades": 368,
+        "win_rate": 29.347826086956523
+      }
+    },
+    "by_year": {
+      "2026": {
+        "net_pnl": -172.42480176340692,
+        "trades": 883,
+        "win_rate": 29.218573046432617,
+        "wins": 258
+      }
+    }
+  },
+  "config": {
+    "confidence": 0.45,
+    "custom_fee_pct": 0.00055,
+    "data_path": "data/normalized/bybit/BTCUSDT/5m/bybit_BTCUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "date_end": "2026-04-26T00:00:00Z",
+    "date_start": "2026-01-01T00:00:00Z",
+    "exit_mode": "fixed",
+    "fee_mode": "taker",
+    "funding_mode": "none",
+    "initial_balance": 1000.0,
+    "interval_minutes": 5,
+    "look_ahead": 36,
+    "maker_fee_pct": 0.0002,
+    "model_path": "monster_v4_2.json",
+    "order_qty": 0.001,
+    "same_candle_policy": "conservative",
+    "sl_pct": 0.006,
+    "slippage_bps": 5.0,
+    "source": "bybit",
+    "spread_bps": 5.0,
+    "symbol": "BTCUSDT",
+    "taker_fee_pct": 0.00055,
+    "tp_pct": 0.012,
+    "trailing": null
+  },
+  "data_quality": {
+    "duplicate_timestamps_count": 0,
+    "expected_5m_rows": 33120,
+    "gaps_first_5": [],
+    "missing_candles_count": 0,
+    "row_count": 33120,
+    "timestamp_max_utc": "2026-04-25T23:55:00+00:00",
+    "timestamp_min_utc": "2026-01-01T00:00:00+00:00"
+  },
+  "generated_at_utc": "2026-04-26T14:45:57.578888+00:00",
+  "outcomes": {
+    "skipped_no_atr": 0,
+    "sl": 517,
+    "timeout": 198,
+    "tp": 168,
+    "trailing": 0,
+    "trailing_activated": 0
+  },
+  "signals": {
+    "long_signals_above_threshold": 4534,
+    "no_signal_rows": 24437,
+    "short_signals_above_threshold": 3862,
+    "total_signal_rows": 32833
+  },
+  "summary": {
+    "avg_duration_candles": 16.741789354473386,
+    "avg_duration_minutes": 83.70894677236693,
+    "avg_loss_net": -0.5053225164598975,
+    "avg_trade_net": -0.1952715761759988,
+    "avg_win_net": 0.5558208179225929,
+    "best_trade_net": 0.9774766032594285,
+    "expectancy_net": -0.1952715761759988,
+    "fees_paid": 71.14095044528779,
+    "final_balance": 827.575198236593,
+    "funding_paid": 0.0,
+    "long_net_pnl": -102.52253058432653,
+    "long_trades": 515,
+    "longest_losing_streak": 17,
+    "max_drawdown_pct": 17.24248017634078,
+    "max_drawdown_usdt": 172.4248017634078,
+    "profit_factor_net": 0.45405226595845743,
+    "short_net_pnl": -69.90227117908042,
+    "short_trades": 368,
+    "sl_count": 517,
+    "spread_slippage_cost_estimate": 97.01038456701826,
+    "timeout_count": 198,
+    "total_gross_pnl": -101.28385131811916,
+    "total_net_pnl": -172.42480176340695,
+    "tp_count": 168,
+    "trades_total": 883,
+    "trailing_count": 0,
+    "turnover_notional": 64683.774298875,
+    "win_rate_net": 29.218573046432617,
+    "worst_trade_net": -0.7646323614488568
+  }
+}

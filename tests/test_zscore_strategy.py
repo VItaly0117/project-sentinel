@@ -13,14 +13,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from sentinel_runtime.config import StrategyMode
+from sentinel_runtime.errors import ConfigError
 from sentinel_runtime.models import SignalDecision
 from sentinel_runtime.strategies.zscore_mean_reversion import (
+    DEMO_RELAXED_PARAMS,
     ZscoreMeanReversionEngine,
     ZscoreMeanReversionParams,
     compute_atr,
     compute_rolling_zscore,
     compute_rsi,
     compute_volume_zscore,
+    params_from_env,
 )
 
 
@@ -297,3 +300,96 @@ def test_load_app_config_default_strategy_mode_is_xgb(monkeypatch, tmp_path):
     monkeypatch.delenv("STRATEGY_MODE", raising=False)
     config = load_app_config(tmp_path / ".env.missing")
     assert config.strategy.strategy_mode is StrategyMode.XGB
+
+
+# ---------------------------------------------------------------------------
+# params_from_env — opt-in demo-tuning profiles + env overrides
+# ---------------------------------------------------------------------------
+
+
+def _clear_zscore_env(monkeypatch):
+    """Start every env test from a known clean state."""
+    for key in (
+        "ZSCORE_PROFILE",
+        "ZSCORE_ENTRY_LONG",
+        "ZSCORE_ENTRY_SHORT",
+        "ZSCORE_RSI_LONG_MAX",
+        "ZSCORE_RSI_SHORT_MIN",
+        "ZSCORE_ATR_PCT_MIN",
+        "ZSCORE_ATR_PCT_MAX",
+        "ZSCORE_VOLUME_MIN",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_params_from_env_defaults_match_spec_constants(monkeypatch):
+    _clear_zscore_env(monkeypatch)
+    params = params_from_env()
+    # Defaults are the spec-accurate values — unchanged.
+    assert params == ZscoreMeanReversionParams()
+    assert params.zscore_entry_long == -2.1
+    assert params.atr_pct_min == 0.0025
+
+
+def test_params_from_env_demo_relaxed_profile_loosens_gates(monkeypatch):
+    _clear_zscore_env(monkeypatch)
+    monkeypatch.setenv("ZSCORE_PROFILE", "demo_relaxed")
+    params = params_from_env()
+    assert params == DEMO_RELAXED_PARAMS
+    # Demo preset is strictly looser than the spec default on every gate
+    # that matters for entry frequency.
+    default = ZscoreMeanReversionParams()
+    assert params.zscore_entry_long > default.zscore_entry_long  # e.g. -1.8 > -2.1
+    assert params.zscore_entry_short < default.zscore_entry_short  # 1.8 < 2.1
+    assert params.rsi_long_max > default.rsi_long_max  # 40 > 32
+    assert params.rsi_short_min < default.rsi_short_min  # 60 < 68
+    assert params.atr_pct_min < default.atr_pct_min  # 0.0010 < 0.0025
+    assert params.atr_pct_max > default.atr_pct_max  # 0.0250 > 0.0180
+    assert params.volume_zscore_min < default.volume_zscore_min  # -1.0 < -0.5
+
+
+def test_params_from_env_unknown_profile_raises(monkeypatch):
+    _clear_zscore_env(monkeypatch)
+    monkeypatch.setenv("ZSCORE_PROFILE", "aggressive_yolo")
+    with pytest.raises(ConfigError, match="Unknown ZSCORE_PROFILE"):
+        params_from_env()
+
+
+def test_params_from_env_individual_override_stacks_on_profile(monkeypatch):
+    _clear_zscore_env(monkeypatch)
+    monkeypatch.setenv("ZSCORE_PROFILE", "demo_relaxed")
+    monkeypatch.setenv("ZSCORE_ATR_PCT_MIN", "0.0005")
+    params = params_from_env()
+    # Profile baseline survives untouched on fields not overridden.
+    assert params.zscore_entry_long == DEMO_RELAXED_PARAMS.zscore_entry_long
+    assert params.rsi_long_max == DEMO_RELAXED_PARAMS.rsi_long_max
+    # Override field replaced.
+    assert params.atr_pct_min == 0.0005
+
+
+def test_params_from_env_bad_override_value_raises(monkeypatch):
+    _clear_zscore_env(monkeypatch)
+    monkeypatch.setenv("ZSCORE_ATR_PCT_MIN", "not-a-number")
+    with pytest.raises(ConfigError, match="ZSCORE_ATR_PCT_MIN"):
+        params_from_env()
+
+
+def test_demo_relaxed_profile_fires_on_observed_eth_candle():
+    """Regression: the candle that failed on defaults must now fire on demo_relaxed.
+
+    Observed from a real demo session:
+      z ≈ -2.069, rsi ≈ 27.13, atr_pct ≈ 0.00181, volume_ok=True.
+    Under `default` profile this was `action=None` (z and atr_pct_min gate failed).
+    Under `demo_relaxed` (-1.8 z / 0.0010 atr floor) every gate passes → Buy.
+    """
+    params = DEMO_RELAXED_PARAMS
+    # Simulate the exact observed point — no engine required for the assertion,
+    # just validate that the thresholds on the relaxed preset accept it.
+    z, rsi, atr_pct, vol_z = -2.069, 27.13, 0.00181, 0.5
+    long_gate = (
+        z <= params.zscore_entry_long
+        and rsi <= params.rsi_long_max
+        and params.atr_pct_min <= atr_pct <= params.atr_pct_max
+        and vol_z >= params.volume_zscore_min
+    )
+    assert long_gate, "demo_relaxed profile must accept the observed ETH candle"

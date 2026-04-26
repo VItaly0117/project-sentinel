@@ -54,52 +54,38 @@
 - The repo now also contains lightweight project subagents for runtime stabilization, training/data work, project-memory maintenance, and demo/docs work.
 - The repository now also includes an `obsidian/` knowledge graph starter vault with linked notes for project essence, current state, roadmap, runtime, training, risks, decisions, demo story, and commands.
 
-## Fleet control-plane dashboard (2026-04-23)
-- `GET /api/bots` now returns `{server: {dry_run_mode, strategy_mode, storage_backend, timestamp}, bots: [...]}` instead of a flat list.
-- Each bot in `bots` now includes: `last_action_side`, `total_closed_trades`, `total_pnl` (cheap aggregate added to `_pg_list_bots` / `_sqlite_list_bots`).
-- Dashboard title changed to "Fleet Dashboard".
-- New **Fleet Overview** section (hidden when ≤1 bot, auto-visible for 2+ bots): grid of bot cards showing id, DRY/LIVE badge, strategy, last-seen time (colour-coded by staleness), last action, trade count, total PnL.
-- Staleness colour logic: < 10 min = green, < 30 min = yellow, > 30 min or null = red.
-- Clicking a fleet card calls `selectBot()` — highlights the card with blue ring, syncs dropdown, refreshes detail panels.
-- Bot Detail section now has a label showing the selected bot name (`— btcusdt`).
-- Single-bot path preserved: fleet section hidden, all existing detail panels work exactly as before.
-- Header mode badge updated from server metadata on every `/api/bots` refresh (fast, no per-bot status call needed).
-- Backward-compatible: `fetchBots()` handles both old flat-array and new `{server, bots}` formats.
-
-## Multi-bot control-plane API (2026-04-23)
-- `GET /api/bots` added — discovers all known bots for the active backend.
-  - PostgreSQL: queries `information_schema.tables` for schemas with a `runtime_state` table; each schema = one bot.
-  - SQLite: scans `RUNTIME_DB_DIR` (defaults to parent of `RUNTIME_DB_PATH`) for `*.db` files; each file stem = one bot.
-  - Returns `[{id, storage, db_exists, last_candle_time}]` per bot.
-- `?bot=<id>` added to `/api/status`, `/api/trades`, `/api/events`, `/api/pnl`.
-  - PostgreSQL: `bot` = schema name → `SET search_path TO "{schema}"` per connection. Validated `[a-zA-Z0-9_-]{1,63}`.
-  - SQLite: `bot` = file stem → `{RUNTIME_DB_DIR}/{bot}.db`. Same validation regex.
-  - Omitting `?bot` uses server-default (`DATABASE_SCHEMA` / `RUNTIME_DB_PATH`) — fully backward-compatible.
-  - Invalid IDs return HTTP 400.
-- Dashboard bot selector added to header — `<select id="bot-select">` populated from `/api/bots`, switches all panels immediately on change.
-- `_pg_connect()` now accepts optional `schema` param so all query functions can override the default schema without duplicating connection logic.
-
-## Docker + PostgreSQL (2026-04-22)
-- `requirements.txt` created with all runtime/training/DB deps.
-- `Dockerfile` — Python 3.12-slim, installs requirements, copies source, default CMD is `sentineltest.py`.
-- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` (schema `btcusdt`) + `eth-bot` (schema `ethusdt`).
-- `StorageConfig` now has `database_url: str | None` and `database_schema: str` fields.
-- `sentinel_runtime/storage.py` now has `PostgreSQLRuntimeStorage` (psycopg2, same public API as SQLite) and a `create_storage(config)` factory.
+## Docker + PostgreSQL + API (2026-04-22 to 2026-04-23)
+- `requirements.txt` includes runtime/training/DB/API deps (fastapi, uvicorn, psycopg2).
+- `Dockerfile` — Python 3.12-slim, non-root `sentinel` user, entrypoint dispatcher for `bot` or `api` mode.
+- `docker/entrypoint.sh` — dispatches to runtime (with preflight-gated startup) or FastAPI server.
+- `docker-compose.yml` — `postgres:16-alpine` + `btc-bot` + `eth-bot` + `api` (hardened):
+  - Per-service log rotation (10m × 5 files, ~50MB cap)
+  - Healthchecks on all services (postgres readiness, bot preflight, API liveness)
+  - Postgres port bound to `127.0.0.1` (not public)
+  - API port bound to `127.0.0.1:8000`
+- `StorageConfig` has `database_url: str | None` and `database_schema: str` fields.
+- `sentinel_runtime/storage.py` has `PostgreSQLRuntimeStorage` (psycopg2) and `create_storage()` factory.
 - `create_storage` chooses PostgreSQL when `DATABASE_URL` is set, otherwise falls back to SQLite — fully backward compatible.
-- Schema isolation: each bot instance writes to its own PostgreSQL schema, preventing `runtime_state` key collisions.
-- `sentinel_runtime/runtime.py` now uses `create_storage()` factory.
-- `sentinel_runtime/preflight.py` now skips the SQLite writability check when `DATABASE_URL` is set and reports PostgreSQL mode instead.
-- All 70 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore).
+- Schema isolation: each bot instance writes to its own PostgreSQL schema (btcusdt/ethusdt/custom).
+- `sentinel_runtime/preflight.py` reports PostgreSQL mode when `DATABASE_URL` is set.
+- API endpoints (read-only):
+  - `/api/health` — liveness probe
+  - `/api/status` — exposes `storage_backend` (postgres/sqlite), `storage_target`, `bot_id`
+  - `/api/trades` — recent closed trades
+  - `/api/events` — runtime events with optional level filter
+  - `/api/pnl` — aggregate PnL summary
+  - `/` — single-file HTML dashboard (Tailwind, vanilla JS)
+- 73 tests pass (30 runtime + 17 training + 17 ingest + 6 zscore + 3 new).
 - **Launch command:** `docker compose up --build`
 
 ## Current debt and risks
-- Redis, admin panel, CI/CD pipeline, and analyst workflow are still absent.
-- Runtime persistence is local SQLite only; deleting or corrupting the DB resets markers, event history, and persisted baseline state.
+- Redis, live-mode admin panel (beyond read-only API), CI/CD smoke automation, and analyst workflow are still absent.
+- Runtime persistence is **local SQLite by default**; PostgreSQL is available via `DATABASE_URL` env. In either case, deleting or corrupting the DB resets markers, event history, and persisted baseline state.
 - GitHub branch protection for `main` could not be enforced automatically on the current account plan, so PR-only work on `main` is a team rule rather than a server-side protection right now.
 - Startup reconciliation is intentionally conservative: if exchange exposure cannot be matched to the local action marker, the runtime stops instead of guessing.
 - In dry-run mode, exchange-side open position/order limits reflect the real account state only; simulated orders do not create exchange exposure.
 - Runtime still depends on a local model artifact named `monster_v4_2.json`.
-- Runtime preflight is local-only and does not verify that exchange credentials are accepted by Bybit yet; it only verifies presence and launch-time safety gates.
+- Runtime preflight is local-only and does not verify that exchange credentials are accepted by Bybit yet; it only verifies presence and launch-time safety gates. (Optional `--remote-check` flag deferred.)
 - Training labels still assume OHLC barrier touches are executable and do not capture slippage, spread, latency, or order book effects.
 - Training still has no walk-forward validation, slippage model, spread model, or microstructure-aware execution assumptions.
 - The ingest layer is intentionally local-first: it normalizes saved raw files, but it still does not download, paginate, or backfill exchange datasets automatically.
@@ -108,6 +94,29 @@
 - The new inspect helper validates metadata against the CSV, but it is still an operator-side check, not a broader artifact registry or dataset catalog.
 - Claude Code handoff is prepared at the documentation/settings level, but the actual 5-day implementation sprint still depends on disciplined task slicing and daily memory updates.
 - Claude Code plugin support on each machine still depends on local tool installation, especially `pyright`, because the Python LSP plugin needs the local `pyright-langserver` binary.
+
+## Backtest v2 with Bybit research (2026-04-26)
+- Complete backtest rewrite: `scripts/backtest.py` now supports multi-year Bybit-native matrix (OHLCV + taker fees).
+- Realistic cost modeling: taker fees, slippage scenarios (zero_cost, stress, realistic_taker).
+- Frozen baseline: Binance BTCUSDT 6mo (Jan–Jun 2024) against ATR trailing-stop configurations.
+- Backtest reports: `reports/backtest_v2/` contains 30+ scenario JSON reports (confidence × strategy variant × cost model).
+- Integration: Backtester simulates ATR trailing-stop exits end-to-end; results feed research pipeline.
+
+## Demo tooling & operational improvements (2026-04-24 to 2026-04-26)
+- **Demo smoke-order tool**: `sentinel_runtime/smoke_order.py` — operator-invoked order simulation (guarded, no real execution).
+- **Telegram polling split**: Separated alert dispatcher from getUpdates polling to avoid 409 Conflict errors.
+- **BYBIT_POSITION_MODE support**: Runtime now handles `one_way` vs `hedge` position mode; env-configurable.
+- **Demo-tuning profiles**: Opt-in `ZSCORE_DEMO_PROFILE` and `BTC_CONFIDENCE_OVERRIDE` for demo parameter sweeps.
+- **Deploy helper scripts**: Local and VPS ops helpers (`deploy_helper.py` or similar) for streamlined deployment.
+
+## Unmerged feature branches (not yet on origin/main)
+The following branches have work in progress but are not yet merged into main:
+- **`feat/runtime-orchestrator`** — Multi-bot instance identity, runtime coordination
+- **`feat/platform-devops`** — Additional platform infrastructure  
+- **`feat/api-dashboard`** — Enhanced API endpoints (e.g., `/api/bots` selector, `?bot=...` query param)
+- **`feat/quant-strategy`** — Quantitative strategy extensions
+
+Before documenting as "built", verify the commits are merged to origin/main.
 
 ## Gap to target system
 - The current code is a safer MVP trading runtime with local SQLite persistence, not the multi-bot cloud platform described in the spec.
@@ -119,12 +128,16 @@
 - Edits to the red zone require the `[ALGO-UPDATE]` tag in the user request; agents refuse otherwise.
 - Protocol is documented in `CLAUDE.md` ("Algorithm Sandbox") and `docs/claude-code-handoff.md` ("ALGO-UPDATE protocol").
 
-## Model artifact status (2026-04-23)
-- `monster_v4_2.json` (2.6M) exists — a real XGBoost artifact with 11 engineered features and 1431 boosted trees.
-- This artifact is loaded by default when `STRATEGY_MODE=xgb` (default).
-- The artifact **was** trained from Binance BTCUSDT 5m data (Jan 2024), but the original normalized data and training artifacts have not yet been regenerated in this session.
-- **Day 1 task**: Re-ingest Binance data, run a fresh training baseline, and save artifacts to `artifacts/train_v4/binance-btcusdt-5m-baseline/`.
-- The ingest and training infrastructure is ready; what's missing is the fresh reproducible run and evidence pack.
+## Model artifact and ATR trailing-stop exits (2026-04-25)
+- `monster_v4_2.json` (2.6M) — real XGBoost artifact with 11 features, 1431 boosted trees, loaded when `STRATEGY_MODE=xgb`.
+- **New: ATR trailing-stop exits** (2026-04-25):
+  - New module `sentinel_runtime/exits.py` — ATR-band trailing-stop calculation engine with state persistence.
+  - Integrated into `sentinel_runtime/runtime.py` — trailing stops update every candle, fail-safe on missing state.
+  - Integrated into `scripts/backtest.py` — ATR trailing-stop simulation for backtesting.
+  - Configurable via env: `TRAILING_STOP_MODE` (off/keep_tp/no_tp), `TRAILING_ATR_WINDOW`, `TRAILING_ATR_MULTIPLIER`.
+  - State persisted to SQLite `trailing_stop_state` table; reconciled on startup.
+  - 401 new unit tests in `test_exits_engine.py` + 513 expanded runtime tests.
+- **Baseline training**: Binance BTCUSDT 5m data (Jan 2024) → baseline artifacts frozen and documented.
 
 ## Strategy modes (2026-04-22)
 - `STRATEGY_MODE` env var now selects between `xgb` (default) and `zscore_mean_reversion_v1`.
@@ -147,7 +160,151 @@
 - To run: `uvicorn api.main:app --reload --port 8000` from project root, then open `http://localhost:8000`.
 - Auto-docs at `http://localhost:8000/api/docs`.
 
+## Deploy helper scripts (2026-04-23)
+- Six operator scripts added to `scripts/`:
+  - `deploy_local.sh` — local Arch/Linux bring-up (warns on missing .env/model, fails fast on docker issues)
+  - `deploy_vps.sh` — VPS bring-up with git pull --ff-only, hard errors on missing .env/model
+  - `smoke_check.sh` — 7 automated checks (service health, API health, bot logs, in-container preflight, PG schemas)
+  - `logs_follow.sh` — tail all or one service, forwarding docker-compose-logs flags
+  - `stop_stack.sh` — safe stop (keep data / bots-only / wipe with confirmation prompt)
+  - `backup_db.sh` — pg_dump wrapper writing timestamped SQL to `backups/`
+- All scripts are `chmod +x`, bash-strict (`set -euo pipefail`), and print colored output.
+- `docs/deploy-helpers.md` created — full reference including staging vs VPS parity table and troubleshooting.
+- `docs/vps-deployment.md` updated with shortcut callouts pointing to the new scripts.
+- `README.md` updated with a "Deploy helpers" table.
+
+## Zscore demo-tuning profiles (2026-04-24)
+- `sentinel_runtime/strategies/zscore_mean_reversion.py` gained an opt-in `params_from_env()` factory.
+- `ZSCORE_PROFILE` env var selects a preset: `default` (spec values, unchanged) or `demo_relaxed` (permissive preset for demo runs).
+- Individual env overrides layer on top: `ZSCORE_ENTRY_LONG`, `ZSCORE_ENTRY_SHORT`, `ZSCORE_RSI_LONG_MAX`, `ZSCORE_RSI_SHORT_MIN`, `ZSCORE_ATR_PCT_MIN`, `ZSCORE_ATR_PCT_MAX`, `ZSCORE_VOLUME_MIN`.
+- `demo_relaxed` values: entry z ±1.8 (was ±2.1), RSI 40/60 (was 32/68), ATR band 0.0010–0.0250 (was 0.0025–0.018), volume_zscore_min -1.0 (was -0.5).
+- `runtime.py` calls `params_from_env()` when `STRATEGY_MODE=zscore_mean_reversion_v1`; all other code paths unchanged.
+- `docker-compose.yml` now makes strategy selection explicit per bot: `btc-bot` uses `xgb` (control), `eth-bot` uses `zscore_mean_reversion_v1` with `ZSCORE_PROFILE=demo_relaxed`. Both overridable via `BTC_STRATEGY_MODE` / `ETH_STRATEGY_MODE` / `ZSCORE_PROFILE`.
+- Risk manager, reconciliation, dry-run gating, TP/SL, notifications, persistence: untouched.
+- Tests: 79/79 passed (6 new around `params_from_env`, including a regression test on the exact candle that failed the previous demo run).
+
+## BTC/XGB demo-tuning override (2026-04-24)
+- New opt-in env var `SIGNAL_CONFIDENCE_OVERRIDE` in `sentinel_runtime/config.py` — when set (0.0–1.0), takes precedence over `SIGNAL_CONFIDENCE`. Empty string = unset (compose empty-env pattern).
+- `SIGNAL_CONFIDENCE` default (`0.51`) is unchanged. Global spec behavior untouched.
+- `sentinel_runtime/runtime.py` bootstrap log now reports `confidence=X.XXX (source=default|override)` so operators can confirm which value is active.
+- `docker-compose.yml`: `btc-bot` ships with `SIGNAL_CONFIDENCE_OVERRIDE=${BTC_SIGNAL_CONFIDENCE:-0.30}` (demo-only). `eth-bot` doesn't set it (irrelevant to zscore). Operators can override via `.env` (`BTC_SIGNAL_CONFIDENCE=0.25`) or disable (`BTC_SIGNAL_CONFIDENCE=`).
+- `sentinel_runtime/signals.py` is **not touched** — the engine still reads `confidence_threshold` from `StrategyConfig` exactly as before. Red-zone rule respected.
+- Six new tests in `tests/test_runtime_mvp.py` covering: no-override → spec default, override precedence, empty-string fallback, invalid value, out-of-range value. Also clears env between tests so the `os.environ.setdefault` pattern in `load_dotenv_if_present` doesn't leak.
+- Tests: 84/84 passed.
+
+## Telegram polling split (2026-04-24)
+- `NotificationConfig.command_polling_enabled: bool = True` added — decouples inbound `getUpdates` from outbound `sendMessage`.
+- New env var `TELEGRAM_COMMAND_POLLING_ENABLED` (default `true`, backward-compatible for single-bot setups).
+- `TelegramNotifier.start_command_listener()` now short-circuits when polling is disabled; outbound alerts (`send_startup`, `send_trade_*`, `send_runtime_*`, `send_message`) continue to work.
+- `docker-compose.yml`: `btc-bot` keeps polling on (true), `eth-bot` turns polling off (false). Both still send alerts. Avoids Telegram HTTP 409 Conflict when two containers share one bot token.
+- Six new tests in `tests/test_runtime_mvp.py` covering: default true, explicit false, truthy-string parsing, polling-disabled skips thread, alerts still work when polling disabled, polling-enabled starts thread.
+- Tests: 90/90 passed.
+
+## Demo smoke order tool (2026-04-24)
+- New module `sentinel_runtime/smoke_order.py` — operator-invoked one-off tool that places a tiny market order on Bybit DEMO, optionally closes it, and prints a clear pass/fail outcome. Isolated from the main trading loop.
+- Hard guards: `--demo-smoke-order` + `--confirm-demo-order` + `EXCHANGE_ENV=demo` + `ALLOW_LIVE_MODE=false` + `DRY_RUN_MODE=false` + `0 < qty <= SMOKE_MAX_QTY` (default 0.01).
+- New helper `BybitExchangeClient.close_position_market(side, qty)` — reduce-only opposite-side market order, used only by the smoke tool.
+- Dispatch: `runtime.main()` detects `--demo-smoke-order` in argv and forwards to `smoke_order.smoke_main`. Existing preflight and `run_forever` paths untouched.
+- Exit codes: 0 pass, 1 config, 2 guard refusal, 3 exchange rejection, 4 internal, 5 verification mismatch.
+- 14 focused guard tests + 1 dispatch test in `tests/test_smoke_order.py`. Full suite: 104/104 passed.
+- **Proven finding from first run against Bybit demo**: account is in One-Way mode but `exchange.place_market_order` hardcodes `positionIdx=1/2` (Hedge mode). API returns `ErrCode: 10001 position idx not match position mode`. This is the exact reason live-orders mode never fills, independent of strategy output.
+
+## Bybit position-mode fix (2026-04-24)
+- New env var `BYBIT_POSITION_MODE=one_way|hedge`, default `hedge` (preserves prior behaviour).
+- New `PositionMode` enum and `ExchangeConfig.position_mode` field parsed in `load_app_config` with validation.
+- New private helper `BybitExchangeClient._position_idx_for_side(side)`:
+  - `one_way` → always `0`.
+  - `hedge` → `1` for Buy (long slot), `2` for Sell (short slot).
+- Both `place_market_order` and `close_position_market` now call the helper. Smoke-order tool inherits the fix automatically — no changes to `smoke_order.py`.
+- Eight new focused tests in `tests/test_runtime_mvp.py`:
+  - 4 config parsing tests (default, explicit one_way, uppercase, invalid).
+  - 4 adapter tests using a `_RecordingSession` mock to assert exact `positionIdx` values on open and close, for both modes.
+- Full suite: 112/112 passed.
+- Resolves ErrCode 10001 for Bybit demo accounts running in One-Way mode — set `BYBIT_POSITION_MODE=one_way` in `.env`, no code changes required.
+- Stacked on top of PR #16 (smoke-order tool).
+
+## ATR trailing-stop exits (2026-04-24)
+- Opt-in exit policy added to both the backtester and the live runtime.
+  Default behaviour is unchanged — `EXIT_MODE` is unset → `fixed`, which
+  preserves every existing order kwarg, dry-run path, preflight check,
+  reconciliation outcome, and hedge/one-way `positionIdx` mapping.
+- New module `sentinel_runtime/exits.py` implements the shared exit
+  engine used by both `scripts/backtest.py` and `sentinel_runtime/runtime.py`:
+  `compute_atr`, `initial_exit_state`, `update_exit_state_with_candle`,
+  `build_initial_levels`. No I/O, Decimal-only, unit-tested.
+- New env vars (all validated in preflight): `EXIT_MODE`,
+  `TRAILING_ACTIVATION_PCT`, `TRAILING_ATR_MULT`, `TRAILING_ATR_PERIOD`,
+  `TRAILING_MIN_LOCK_PCT`, `TRAILING_KEEP_FIXED_TP`.
+- Runtime: when `EXIT_MODE=atr_trailing` and a position is open, each
+  `run_once()` tick computes ATR from closed candles, calls the exit
+  engine, and, on its `should_close` decision, closes via
+  `close_position_market` (or synthesises a closed-trade record in
+  dry-run). Trailing state is persisted as a JSON blob under the
+  existing `runtime_state` K/V table — no schema change, restart-safe.
+- Exchange adapter: `place_market_order` and `simulate_market_order`
+  accept `include_fixed_tp=True` (default preserves existing behaviour);
+  in trailing mode with `TRAILING_KEEP_FIXED_TP=false`, `takeProfit` is
+  omitted entirely — no synthetic TP is sent.
+- Exchange-side hard SL continues to be attached at entry in both modes
+  as disaster-recovery protection.
+- Tests:
+  - New `tests/test_exits_engine.py` (20 cases: ATR correctness, long
+    and short activation, monotonic stop, hard SL precedence, fixed TP
+    toggle, min-lock floor, insufficient-ATR handling, same-candle
+    ambiguity, state round-trip).
+  - New runtime cases appended to `tests/test_runtime_mvp.py`: config
+    parsing, trailing-mode order without TP, dry-run close does not hit
+    exchange API, stale-state cleared on flat exchange.
+  - Full suite: 140/140 passed.
+- Backtest matrix (6-month BTCUSDT 5m, fixed vs trailing at conf 0.30/
+  0.45/0.51/0.60, with and without keep_fixed_tp) captured in the final
+  hand-off summary.
+
+## Backtest v2 + Bybit-native multi-year matrix (2026-04-26)
+- New module `sentinel_training/ingest/bybit_download.py` paginates the Bybit V5
+  public market kline endpoint (no API key) with rate limiting, raw JSON page
+  caching for audit, deduplication, and gap detection. Default behaviour is
+  resume-friendly: re-running re-uses cached pages.
+- Pulled BTCUSDT and ETHUSDT linear 5m datasets covering 2024-01-01 → 2026-04-25
+  (243,647 rows each, 0 gaps, 1 boundary-overlap dup dropped per symbol). Output
+  at `data/normalized/bybit/<SYMBOL>/5m/...csv` plus metadata sidecar with
+  category, download_command, downloader.* provenance. Datasets stay local
+  (`data/` in `.gitignore`); reproducible via documented commands.
+- New `scripts/backtest_v2.py` adds realistic execution costs on top of the v1
+  sandbox: half-spread + slippage on entry/exit, taker/maker/custom fees,
+  conservative same-candle policy (SL wins ties; v1 silently treated ties as
+  timeouts), gross vs net PnL split, JSON report + per-trade CSV + equity CSV,
+  and shared `sentinel_runtime/exits.py` for the ATR-trailing variant.
+- New `scripts/run_backtest_v2_matrix.py` runs 2 symbols × 3 exit variants ×
+  4 confidences × 3 cost profiles × 4 time slices = 288 configurations and
+  writes a `summary.csv` + `manifest.json` + verdict classifier
+  (`PASS_CANDIDATE` / `WEAK` / `FAIL` / `INSUFFICIENT`) per the demo-forward
+  gate.
+- Tests: `tests/test_backtest_v2.py` (cost math, same-candle policy, writers,
+  verdict classifier — 21 cases) and `tests/test_bybit_download.py` (plan
+  builder, ISO/millis, dedup, gap detection, CLI parser — 10 cases). All
+  31 new tests + the 95 prior backtest-v2 / ingest / runtime / exits tests
+  pass.
+- Matrix verdict (run id `20260426T144523Z`):
+  - PASS_CANDIDATE: 12 / 288 — **all** under `zero_cost`. None survive
+    `realistic_taker` (taker 0.055% + 2 bp spread + 2 bp slippage).
+  - At realistic costs: 96 / 96 FAIL across both symbols, all variants,
+    all confidences, all slices.
+  - ATR trailing did NOT improve risk under realistic costs vs fixed: it
+    increased turnover, fees, and drawdown on both symbols.
+- Operator interpretation: the current XGB model + fixed/ATR-trailing exits
+  do not show profitable evidence on Bybit-native 2024-2026 5m data once
+  Bybit demo execution friction is modelled. Demo-forward gate is **not
+  met**; runtime stays in `DRY_RUN_MODE`.
+- Documentation: `docs/backtest-v2.md` covers data commands, single-run +
+  matrix commands, cost-profile semantics, conservative same-candle
+  rationale, ATR-trailing role, summary.csv reading guide, and demo-forward
+  gate. Handoff tarball at `handoff/backtest_v2_<RUN_ID>.tar.gz` (8.7 MB)
+  carries summary.csv, manifest.json, reports_json, configs, and the two
+  normalized Bybit CSVs for offline review.
+
 ## Next step
 - Run `python3 sentineltest.py --preflight` then `python3 sentineltest.py` to confirm the smoke test now passes end-to-end with the real model artifact.
 - Optional: run `STRATEGY_MODE=zscore_mean_reversion_v1 python3 sentineltest.py --preflight` to smoke-test the new deterministic path.
 - Start the API server alongside the runtime to verify the dashboard reads live data.
+- Launch `docker compose up --build -d` and watch `eth-bot` logs for `Strategy=zscore_mean_reversion_v1 … action=Buy|Sell` within a reasonable demo window.

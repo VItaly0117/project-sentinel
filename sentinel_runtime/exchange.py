@@ -10,7 +10,7 @@ from typing import Any, Callable
 import pandas as pd
 from pybit.unified_trading import HTTP
 
-from .config import CircuitBreakerConfig, ExchangeConfig, ExchangeEnvironment, StrategyConfig
+from .config import CircuitBreakerConfig, ExchangeConfig, ExchangeEnvironment, PositionMode, StrategyConfig
 from .errors import CircuitBreakerOpen, ExchangeClientError
 from .models import BalanceSnapshot, ClosedTradeReport, ExchangeExposureSnapshot, OrderSide, PlacedOrder
 
@@ -198,23 +198,39 @@ class BybitExchangeClient:
             exit_price=self._extract_decimal(trade, ("avgExitPrice",), Decimal("0")),
         )
 
-    def place_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
+    def place_market_order(
+        self,
+        side: OrderSide,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
+        """Place a market entry with an attached hard SL (and optionally TP).
+
+        ``include_fixed_tp`` defaults to ``True`` so EXIT_MODE=fixed callers
+        (and all existing callers) get the exact same kwargs as before. In
+        EXIT_MODE=atr_trailing with ``TRAILING_KEEP_FIXED_TP=false``, the
+        runtime passes ``False`` to omit the ``takeProfit`` kwarg from the
+        request — no synthetic TP is sent in that case. Stop-loss is
+        always attached as disaster-recovery protection.
+        """
         order_template = self._build_order_template(side, entry_price)
-        position_index = 1 if side == "Buy" else 2
+        position_index = self._position_idx_for_side(side)
+        order_kwargs: dict[str, Any] = {
+            "category": self._exchange_config.category,
+            "symbol": self._exchange_config.symbol,
+            "side": side,
+            "orderType": "Market",
+            "qty": str(self._strategy_config.order_qty),
+            "stopLoss": str(order_template.stop_loss),
+            "slTriggerBy": "MarkPrice",
+            "positionIdx": position_index,
+        }
+        if include_fixed_tp:
+            order_kwargs["takeProfit"] = str(order_template.take_profit)
+            order_kwargs["tpTriggerBy"] = "MarkPrice"
         response = self._call(
             "place_order",
-            lambda: self._session.place_order(
-                category=self._exchange_config.category,
-                symbol=self._exchange_config.symbol,
-                side=side,
-                orderType="Market",
-                qty=str(self._strategy_config.order_qty),
-                takeProfit=str(order_template.take_profit),
-                stopLoss=str(order_template.stop_loss),
-                tpTriggerBy="MarkPrice",
-                slTriggerBy="MarkPrice",
-                positionIdx=position_index,
-            ),
+            lambda: self._session.place_order(**order_kwargs),
         )
         order_result = response.get("result", {})
         return PlacedOrder(
@@ -222,11 +238,59 @@ class BybitExchangeClient:
             side=order_template.side,
             qty=order_template.qty,
             entry_price=order_template.entry_price,
-            take_profit=order_template.take_profit,
+            take_profit=order_template.take_profit if include_fixed_tp else Decimal("0"),
             stop_loss=order_template.stop_loss,
         )
 
-    def simulate_market_order(self, side: OrderSide, entry_price: Decimal) -> PlacedOrder:
+    def close_position_market(
+        self,
+        side_to_close: OrderSide,
+        qty: Decimal,
+    ) -> PlacedOrder:
+        """Reduce-only market order that closes an existing position.
+
+        Used ONLY by the demo smoke-order tool (`sentineltest.py --demo-smoke-order`).
+        Not invoked by the main trading loop. Honours `BYBIT_POSITION_MODE`:
+          - one_way: positionIdx=0, opposite side with reduceOnly=True.
+          - hedge:   same positionIdx slot as the original open (1=long, 2=short),
+                     opposite side with reduceOnly=True.
+        """
+        opposite: OrderSide = "Sell" if side_to_close == "Buy" else "Buy"
+        position_index = self._position_idx_for_side(side_to_close)
+        response = self._call(
+            "close_position_market",
+            lambda: self._session.place_order(
+                category=self._exchange_config.category,
+                symbol=self._exchange_config.symbol,
+                side=opposite,
+                orderType="Market",
+                qty=str(qty),
+                reduceOnly=True,
+                positionIdx=position_index,
+            ),
+        )
+        order_result = response.get("result", {})
+        return PlacedOrder(
+            order_id=order_result.get("orderId"),
+            side=opposite,
+            qty=qty,
+            entry_price=Decimal("0"),
+            take_profit=Decimal("0"),
+            stop_loss=Decimal("0"),
+        )
+
+    def simulate_market_order(
+        self,
+        side: OrderSide,
+        entry_price: Decimal,
+        include_fixed_tp: bool = True,
+    ) -> PlacedOrder:
+        """Dry-run counterpart to ``place_market_order``.
+
+        Carries the same ``include_fixed_tp`` semantics so dry-run records
+        show ``take_profit=0`` when the trailing engine would have omitted
+        TP at entry — mirroring what the exchange would see.
+        """
         simulated_order = self._build_order_template(side, entry_price)
         timestamp = time.time_ns()
         return PlacedOrder(
@@ -234,7 +298,7 @@ class BybitExchangeClient:
             side=simulated_order.side,
             qty=simulated_order.qty,
             entry_price=simulated_order.entry_price,
-            take_profit=simulated_order.take_profit,
+            take_profit=simulated_order.take_profit if include_fixed_tp else Decimal("0"),
             stop_loss=simulated_order.stop_loss,
         )
 
@@ -333,6 +397,18 @@ class BybitExchangeClient:
         raise ExchangeClientError(
             f"{operation_name} failed after {self._circuit_breaker_config.max_retries} attempts: {last_error}"
         )
+
+    def _position_idx_for_side(self, side: OrderSide) -> int:
+        """Map (position_mode, side) to Bybit's positionIdx.
+
+        one_way: single slot → always 0.
+        hedge:   1 for long (Buy), 2 for short (Sell).
+        Mismatch with the Bybit account's position-mode setting causes
+        ErrCode 10001 ("position idx not match position mode") on every order.
+        """
+        if self._exchange_config.position_mode is PositionMode.ONE_WAY:
+            return 0
+        return 1 if side == "Buy" else 2
 
     @staticmethod
     def _extract_decimal(

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
 
 from .errors import ConfigError
+from .exits import AtrTrailingConfig, fixed_trailing_config
 
 
 class ExchangeEnvironment(str, Enum):
@@ -18,6 +19,32 @@ class ExchangeEnvironment(str, Enum):
 class StrategyMode(str, Enum):
     XGB = "xgb"
     ZSCORE_MEAN_REVERSION_V1 = "zscore_mean_reversion_v1"
+
+
+class ExitMode(str, Enum):
+    """Exit management mode.
+
+    ``fixed``        — existing behaviour: TP/SL attached to the entry order.
+    ``atr_trailing`` — hard SL stays, optional fixed TP, plus a bot-managed
+                        ATR trailing stop that activates after the trade is
+                        in profit by ``activation_pct``.
+    """
+
+    FIXED = "fixed"
+    ATR_TRAILING = "atr_trailing"
+
+
+class PositionMode(str, Enum):
+    """Bybit position mode.
+
+    one_way: single position slot per symbol, positionIdx=0 for both sides.
+    hedge:   dual slots — positionIdx=1 for long (Buy), positionIdx=2 for short (Sell).
+    Must match the setting on the Bybit account UI. Mismatch → API ErrCode 10001
+    ("position idx not match position mode").
+    """
+
+    ONE_WAY = "one_way"
+    HEDGE = "hedge"
 
 
 @dataclass(frozen=True)
@@ -32,6 +59,7 @@ class ExchangeConfig:
     interval_minutes: int
     kline_limit: int
     closed_pnl_limit: int
+    position_mode: PositionMode = PositionMode.HEDGE
 
 
 @dataclass(frozen=True)
@@ -66,6 +94,9 @@ class RuntimeConfig:
 @dataclass(frozen=True)
 class StorageConfig:
     db_path: Path
+    bot_id: str
+    database_url: str | None  # if set, use PostgreSQL instead of SQLite
+    database_schema: str  # PostgreSQL schema namespace; ignored for SQLite
 
 
 @dataclass(frozen=True)
@@ -81,10 +112,32 @@ class CircuitBreakerConfig:
 class NotificationConfig:
     telegram_bot_token: str | None
     telegram_chat_id: str | None
+    # Outbound sendMessage alerts always fire when `enabled` is True.
+    # command_polling_enabled gates the inbound getUpdates long-poll thread
+    # separately, so multiple bots sharing a single token can all send alerts
+    # without two of them racing for getUpdates and hitting HTTP 409 Conflict.
+    command_polling_enabled: bool = True
 
     @property
     def enabled(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
+
+
+@dataclass(frozen=True)
+class ExitsConfig:
+    """Exit-management configuration shared by runtime and backtest.
+
+    ``mode`` selects between legacy fixed TP/SL and the opt-in ATR
+    trailing engine. ``trailing`` carries the trailing knobs; when
+    ``mode=fixed`` the trailing fields are inert.
+    """
+
+    mode: ExitMode = ExitMode.FIXED
+    trailing: AtrTrailingConfig = field(default_factory=fixed_trailing_config)
+
+
+def _default_exits_config() -> ExitsConfig:
+    return ExitsConfig()
 
 
 @dataclass(frozen=True)
@@ -96,6 +149,7 @@ class AppConfig:
     storage: StorageConfig
     circuit_breaker: CircuitBreakerConfig
     notifications: NotificationConfig
+    exits: ExitsConfig = field(default_factory=_default_exits_config)
 
 
 def load_app_config(env_path: Path | None = None) -> AppConfig:
@@ -129,6 +183,16 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
     if not db_path.is_absolute():
         db_path = (Path.cwd() / db_path).resolve()
 
+    raw_position_mode = _read_env("BYBIT_POSITION_MODE", PositionMode.HEDGE.value).lower()
+    try:
+        position_mode = PositionMode(raw_position_mode)
+    except ValueError as exc:
+        valid = ", ".join(mode.value for mode in PositionMode)
+        raise ConfigError(
+            f"Unsupported BYBIT_POSITION_MODE value: {raw_position_mode!r}. "
+            f"Valid: {valid}."
+        ) from exc
+
     exchange = ExchangeConfig(
         api_key=_read_env("BYBIT_API_KEY", required=True),
         api_secret=_read_env("BYBIT_API_SECRET", required=True),
@@ -140,11 +204,24 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         interval_minutes=_parse_int("BYBIT_INTERVAL_MINUTES", 5, minimum=1),
         kline_limit=_parse_int("BYBIT_KLINE_LIMIT", 350, minimum=50),
         closed_pnl_limit=_parse_int("BYBIT_CLOSED_PNL_LIMIT", 100, minimum=1),
+        position_mode=position_mode,
     )
+    # SIGNAL_CONFIDENCE_OVERRIDE is an opt-in demo knob. When set, it takes
+    # precedence over SIGNAL_CONFIDENCE (which keeps its spec default of 0.51).
+    # Kept as a separate env var so "demo-tuned" bots are obvious in compose
+    # diffs and in logs, rather than silently lowering the spec constant.
+    base_confidence = _parse_float("SIGNAL_CONFIDENCE", 0.51, minimum=0.0, maximum=1.0)
+    confidence_override = _parse_optional_float(
+        "SIGNAL_CONFIDENCE_OVERRIDE", minimum=0.0, maximum=1.0
+    )
+    effective_confidence = (
+        confidence_override if confidence_override is not None else base_confidence
+    )
+
     strategy = StrategyConfig(
         model_path=model_path,
         order_qty=_parse_decimal("ORDER_QTY", "0.001", minimum=Decimal("0.00000001")),
-        confidence_threshold=_parse_float("SIGNAL_CONFIDENCE", 0.51, minimum=0.0, maximum=1.0),
+        confidence_threshold=effective_confidence,
         tp_pct=_parse_decimal("TP_PCT", "0.012", minimum=Decimal("0")),
         sl_pct=_parse_decimal("SL_PCT", "0.006", minimum=Decimal("0")),
         price_decimals=_parse_int("PRICE_DECIMALS", 2, minimum=0),
@@ -164,7 +241,15 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         dry_run_mode=dry_run_mode,
         allow_live_mode=allow_live_mode,
     )
-    storage = StorageConfig(db_path=db_path)
+    bot_id = _read_env("BOT_ID", exchange.symbol)
+    database_url = _read_optional_env("DATABASE_URL")
+    database_schema = _read_env("DATABASE_SCHEMA", "public")
+    storage = StorageConfig(
+        db_path=db_path,
+        bot_id=bot_id,
+        database_url=database_url,
+        database_schema=database_schema,
+    )
     circuit_breaker = CircuitBreakerConfig(
         api_error_threshold=_parse_int("API_ERROR_THRESHOLD", 5, minimum=1),
         error_window_seconds=_parse_int("API_ERROR_WINDOW_SECONDS", 60, minimum=1),
@@ -175,7 +260,9 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
     notifications = NotificationConfig(
         telegram_bot_token=_read_optional_env("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_read_optional_env("TELEGRAM_CHAT_ID"),
+        command_polling_enabled=_parse_bool("TELEGRAM_COMMAND_POLLING_ENABLED", True),
     )
+    exits = _load_exits_config()
 
     return AppConfig(
         exchange=exchange,
@@ -185,7 +272,40 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         storage=storage,
         circuit_breaker=circuit_breaker,
         notifications=notifications,
+        exits=exits,
     )
+
+
+def _load_exits_config() -> ExitsConfig:
+    """Parse EXIT_MODE + TRAILING_* env vars.
+
+    Defaults preserve legacy behaviour: ``EXIT_MODE=fixed`` makes the
+    trailing knobs irrelevant. Values are parsed even in fixed mode so
+    misconfigured env files surface early in preflight rather than on
+    the first open position.
+    """
+    raw_exit_mode = _read_env("EXIT_MODE", ExitMode.FIXED.value).lower()
+    try:
+        mode = ExitMode(raw_exit_mode)
+    except ValueError as exc:
+        valid = ", ".join(m.value for m in ExitMode)
+        raise ConfigError(
+            f"Unsupported EXIT_MODE value: {raw_exit_mode!r}. Valid: {valid}."
+        ) from exc
+
+    trailing = AtrTrailingConfig(
+        enabled=(mode is ExitMode.ATR_TRAILING),
+        activation_pct=_parse_decimal("TRAILING_ACTIVATION_PCT", "0.004", minimum=Decimal("0")),
+        atr_mult=_parse_decimal("TRAILING_ATR_MULT", "1.4", minimum=Decimal("0.0000001")),
+        atr_period=_parse_int("TRAILING_ATR_PERIOD", 14, minimum=2),
+        min_lock_pct=_parse_decimal("TRAILING_MIN_LOCK_PCT", "0.0015", minimum=Decimal("0")),
+        keep_fixed_tp=_parse_bool("TRAILING_KEEP_FIXED_TP", False),
+    )
+    try:
+        trailing.validate()
+    except ValueError as exc:
+        raise ConfigError(f"Invalid trailing config: {exc}") from exc
+    return ExitsConfig(mode=mode, trailing=trailing)
 
 
 def load_dotenv_if_present(env_path: Path) -> None:
@@ -246,6 +366,25 @@ def _parse_float(
     maximum: float | None = None,
 ) -> float:
     raw_value = _read_env(name, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"Invalid float value for {name}: {raw_value}.") from exc
+    if minimum is not None and value < minimum:
+        raise ConfigError(f"{name} must be >= {minimum}.")
+    if maximum is not None and value > maximum:
+        raise ConfigError(f"{name} must be <= {maximum}.")
+    return value
+
+
+def _parse_optional_float(
+    name: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
+    raw_value = _read_optional_env(name)
+    if raw_value is None:
+        return None
     try:
         value = float(raw_value)
     except ValueError as exc:

@@ -1,0 +1,66 @@
+{
+  "confidences": [
+    0.3,
+    0.45,
+    0.51,
+    0.6
+  ],
+  "cost_profiles": [
+    {
+      "name": "zero_cost",
+      "slippage_bps": 0.0,
+      "spread_bps": 0.0,
+      "taker_fee_pct": 0.0
+    },
+    {
+      "name": "realistic_taker",
+      "slippage_bps": 2.0,
+      "spread_bps": 2.0,
+      "taker_fee_pct": 0.00055
+    },
+    {
+      "name": "stress",
+      "slippage_bps": 5.0,
+      "spread_bps": 5.0,
+      "taker_fee_pct": 0.00055
+    }
+  ],
+  "datasets": {
+    "BTCUSDT": "data/normalized/bybit/BTCUSDT/5m/bybit_BTCUSDT_5m_20240101T000500Z_20260425T235500Z.csv",
+    "ETHUSDT": "data/normalized/bybit/ETHUSDT/5m/bybit_ETHUSDT_5m_20240101T000500Z_20260425T235500Z.csv"
+  },
+  "exit_variants": [
+    {
+      "exit_mode": "fixed",
+      "keep_fixed_tp": false,
+      "label": "fixed"
+    },
+    {
+      "exit_mode": "atr_trailing",
+      "keep_fixed_tp": true,
+      "label": "atr_trailing_keep_tp"
+    },
+    {
+      "exit_mode": "atr_trailing",
+      "keep_fixed_tp": false,
+      "label": "atr_trailing_no_tp"
+    }
+  ],
+  "generated_at_utc": "2026-04-26T14:54:05.299673+00:00",
+  "initial_balance": 1000.0,
+  "look_ahead": 36,
+  "model_path": "monster_v4_2.json",
+  "order_qty": 0.001,
+  "row_count": 288,
+  "run_id": "20260426T144523Z",
+  "same_candle_policy": "conservative",
+  "sl_pct": 0.006,
+  "time_slices_period_end": "2026-04-26T00:00:00Z",
+  "tp_pct": 0.012,
+  "verdict_counts": {
+    "FAIL": 243,
+    "INSUFFICIENT": 0,
+    "PASS_CANDIDATE": 12,
+    "WEAK": 33
+  }
+}
